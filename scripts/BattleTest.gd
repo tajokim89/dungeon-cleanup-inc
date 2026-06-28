@@ -15,12 +15,16 @@ const COLOR_TILE_B: Color = Color(0.087, 0.095, 0.112)
 const COLOR_TILE_BORDER: Color = Color(0.27, 0.235, 0.165)
 const COLOR_PLAYER: Color = Color(0.502, 0.686, 0.408)
 const COLOR_ENEMY: Color = Color(0.671, 0.294, 0.271)
+const COLOR_MOVE_HIGHLIGHT: Color = Color(0.345, 0.557, 0.769, 0.42)
+const COLOR_ATTACK_HIGHLIGHT: Color = Color(0.827, 0.361, 0.294, 0.52)
+const COLOR_SELECTED_HIGHLIGHT: Color = Color(0.851, 0.694, 0.373, 0.35)
 const COLOR_PANEL: Color = Color(0.078, 0.083, 0.098)
 const COLOR_PANEL_DARK: Color = Color(0.047, 0.052, 0.063)
 const COLOR_TEXT: Color = Color(0.902, 0.863, 0.784)
 const COLOR_GOLD: Color = Color(0.851, 0.694, 0.373)
 const COLOR_MUTED: Color = Color(0.604, 0.573, 0.518)
 const COLOR_WARNING: Color = Color(0.808, 0.431, 0.349)
+const COLOR_SUCCESS: Color = Color(0.494, 0.686, 0.443)
 
 var current_contract: Dictionary = {}
 var combat_event: Dictionary = {}
@@ -29,12 +33,17 @@ var player_hp: int = PLAYER_MAX_HP
 var enemies: Array[Dictionary] = []
 var turn_state: String = "player"
 var board_layer: Node2D
+var highlight_layer: Node2D
 var unit_layer: Node2D
 var title_label: Label
 var hp_label: Label
+var result_label: Label
 var status_label: Label
+var action_log_label: Label
 var prompt_label: Label
+var retry_button: Button
 var return_button: Button
+var action_log: Array[String] = []
 
 
 func _ready() -> void:
@@ -100,9 +109,14 @@ func create_board() -> void:
 			tile.name = "Tile_%d_%d" % [x, y]
 			tile.position = cell_to_position(Vector2i(x, y))
 			tile.size = Vector2(CELL_SIZE, CELL_SIZE)
+			tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			var tile_color := COLOR_TILE_A if (x + y) % 2 == 0 else COLOR_TILE_B
 			tile.add_theme_stylebox_override("panel", make_panel_style(tile_color, COLOR_TILE_BORDER, 1))
 			board_layer.add_child(tile)
+
+	highlight_layer = Node2D.new()
+	highlight_layer.name = "HighlightLayer"
+	add_child(highlight_layer)
 
 	unit_layer = Node2D.new()
 	unit_layer.name = "UnitLayer"
@@ -119,7 +133,7 @@ func create_ui() -> void:
 	panel.offset_left = 24
 	panel.offset_top = 20
 	panel.offset_right = 760
-	panel.offset_bottom = 138
+	panel.offset_bottom = 174
 	panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_TILE_BORDER, 2))
 	canvas.add_child(panel)
 
@@ -149,6 +163,14 @@ func create_ui() -> void:
 	var subtitle := make_label(String(current_contract.get("title", "계약 현장")), 12, COLOR_MUTED)
 	title_box.add_child(subtitle)
 
+	retry_button = Button.new()
+	retry_button.text = "재시도"
+	retry_button.visible = false
+	retry_button.disabled = true
+	retry_button.custom_minimum_size = Vector2(86.0, 34.0)
+	retry_button.pressed.connect(restart_battle)
+	header.add_child(retry_button)
+
 	return_button = Button.new()
 	return_button.text = "현장 복귀"
 	return_button.disabled = true
@@ -159,6 +181,10 @@ func create_ui() -> void:
 	hp_label = make_label("", 15, COLOR_TEXT)
 	layout.add_child(hp_label)
 
+	result_label = make_label(get_battle_bonus_text(), 13, COLOR_MUTED)
+	result_label.custom_minimum_size = Vector2(0.0, 22.0)
+	layout.add_child(result_label)
+
 	var message_panel := PanelContainer.new()
 	message_panel.name = "MessagePanel"
 	message_panel.anchor_left = 0.0
@@ -166,7 +192,7 @@ func create_ui() -> void:
 	message_panel.anchor_right = 1.0
 	message_panel.anchor_bottom = 1.0
 	message_panel.offset_left = 24
-	message_panel.offset_top = -112
+	message_panel.offset_top = -132
 	message_panel.offset_right = -24
 	message_panel.offset_bottom = -20
 	message_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_TILE_BORDER, 2))
@@ -185,9 +211,12 @@ func create_ui() -> void:
 
 	status_label = make_label("", 18, COLOR_TEXT)
 	status_label.custom_minimum_size = Vector2(0.0, 28.0)
-	prompt_label = make_label("클릭: 이동/공격 | 방향키: 이동 | Space/Enter: 인접 공격", 15, COLOR_GOLD)
+	action_log_label = make_label("", 14, COLOR_MUTED)
+	action_log_label.custom_minimum_size = Vector2(0.0, 26.0)
+	prompt_label = make_label("아군 행동", 15, COLOR_GOLD)
 	prompt_label.custom_minimum_size = Vector2(0.0, 24.0)
 	message_layout.add_child(status_label)
+	message_layout.add_child(action_log_label)
 	message_layout.add_child(prompt_label)
 
 
@@ -205,6 +234,7 @@ func update_units() -> void:
 		)
 
 	update_hud()
+	refresh_highlights()
 
 
 func create_unit_marker(node_name: String, cell: Vector2i, color: Color, text: String) -> void:
@@ -212,6 +242,7 @@ func create_unit_marker(node_name: String, cell: Vector2i, color: Color, text: S
 	marker.name = node_name
 	marker.position = cell_to_position(cell) + Vector2(7.0, 7.0)
 	marker.size = Vector2(CELL_SIZE - 14.0, CELL_SIZE - 14.0)
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_theme_stylebox_override("panel", make_panel_style(color, Color.WHITE, 1))
 	unit_layer.add_child(marker)
 
@@ -219,7 +250,45 @@ func create_unit_marker(node_name: String, cell: Vector2i, color: Color, text: S
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(label)
+
+
+func refresh_highlights() -> void:
+	if highlight_layer == null:
+		return
+
+	for child in highlight_layer.get_children():
+		child.queue_free()
+
+	if turn_state != "player":
+		return
+
+	add_cell_highlight(player_cell, COLOR_SELECTED_HIGHLIGHT, "SelectedCell")
+
+	for y in range(GRID_HEIGHT):
+		for x in range(GRID_WIDTH):
+			var cell := Vector2i(x, y)
+			if cell == player_cell:
+				continue
+
+			if get_enemy_index_at_cell(cell) != -1:
+				if get_cell_distance(player_cell, cell) == 1:
+					add_cell_highlight(cell, COLOR_ATTACK_HIGHLIGHT, "AttackCell_%d_%d" % [x, y])
+				continue
+
+			if get_cell_distance(player_cell, cell) <= PLAYER_MOVE_RANGE and not is_cell_occupied(cell):
+				add_cell_highlight(cell, COLOR_MOVE_HIGHLIGHT, "MoveCell_%d_%d" % [x, y])
+
+
+func add_cell_highlight(cell: Vector2i, color: Color, node_name: String) -> void:
+	var highlight := ColorRect.new()
+	highlight.name = node_name
+	highlight.position = cell_to_position(cell) + Vector2(4.0, 4.0)
+	highlight.size = Vector2(CELL_SIZE - 8.0, CELL_SIZE - 8.0)
+	highlight.color = color
+	highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	highlight_layer.add_child(highlight)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -235,6 +304,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			var lose_key := event as InputEventKey
 			if lose_key.pressed and not lose_key.echo and lose_key.keycode == KEY_R:
 				restart_battle()
+			elif lose_key.pressed and not lose_key.echo and lose_key.keycode == KEY_ESCAPE:
+				return_to_dungeon()
 		return
 
 	if turn_state != "player":
@@ -331,6 +402,7 @@ func end_player_turn() -> void:
 
 	turn_state = "enemy"
 	update_hud()
+	refresh_highlights()
 	await get_tree().create_timer(0.25).timeout
 	run_enemy_turn()
 
@@ -339,11 +411,17 @@ func run_enemy_turn() -> void:
 	var messages: Array[String] = []
 	for enemy: Dictionary in enemies:
 		if get_cell_distance(enemy.get("cell", Vector2i.ZERO), player_cell) == 1:
-			player_hp -= int(enemy.get("attack", 1))
-			messages.append("%s 공격" % String(enemy.get("label", "적")))
+			var attack_power := int(enemy.get("attack", 1))
+			player_hp -= attack_power
+			messages.append("%s: 보스에게 %d 피해" % [String(enemy.get("label", "적")), attack_power])
 		else:
-			enemy["cell"] = get_enemy_step_toward_player(enemy)
-			messages.append("%s 접근" % String(enemy.get("label", "적")))
+			var before_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+			var next_cell := get_enemy_step_toward_player(enemy)
+			enemy["cell"] = next_cell
+			if next_cell == before_cell:
+				messages.append("%s: 대기" % String(enemy.get("label", "적")))
+			else:
+				messages.append("%s: 접근 (%d,%d)" % [String(enemy.get("label", "적")), next_cell.x + 1, next_cell.y + 1])
 
 		if player_hp <= 0:
 			break
@@ -352,13 +430,19 @@ func run_enemy_turn() -> void:
 		player_hp = 0
 		turn_state = "lost"
 		update_units()
-		update_status("전투 실패: R로 재시도")
-		prompt_label.text = "R: 재시도"
+		return_button.text = "현장 복귀"
+		return_button.disabled = false
+		retry_button.visible = true
+		retry_button.disabled = false
+		result_label.text = "전투 실패: 보너스 미적용"
+		result_label.add_theme_color_override("font_color", COLOR_WARNING)
+		update_status("전투 실패")
+		prompt_label.text = "퇴각 또는 재시도"
 		return
 
 	turn_state = "player"
 	update_units()
-	update_status(" / ".join(messages))
+	update_status("적 행동: %s" % " / ".join(messages))
 
 
 func get_enemy_step_toward_player(enemy: Dictionary) -> Vector2i:
@@ -394,9 +478,15 @@ func resolve_victory() -> void:
 	turn_state = "won"
 	var report := "%s 해결: 방해 세력을 제압했습니다." % String(combat_event.get("title", "현장 전투"))
 	GameState.set_field_battle_resolved(report)
+	refresh_highlights()
+	retry_button.visible = false
+	retry_button.disabled = true
+	return_button.text = "현장 복귀"
 	return_button.disabled = false
-	prompt_label.text = "Space/Enter 또는 버튼: 현장 복귀"
-	update_status(report)
+	result_label.text = "%s 적용" % get_battle_bonus_text()
+	result_label.add_theme_color_override("font_color", COLOR_SUCCESS)
+	prompt_label.text = "전투 종료"
+	update_status("%s | %s" % [report, get_battle_bonus_text()])
 	update_hud()
 
 
@@ -404,9 +494,16 @@ func restart_battle() -> void:
 	player_cell = Vector2i(0, 2)
 	player_hp = PLAYER_MAX_HP
 	turn_state = "player"
+	action_log.clear()
 	setup_enemies()
+	return_button.text = "현장 복귀"
+	return_button.disabled = true
+	retry_button.visible = false
+	retry_button.disabled = true
+	result_label.text = get_battle_bonus_text()
+	result_label.add_theme_color_override("font_color", COLOR_MUTED)
 	update_units()
-	prompt_label.text = "클릭: 이동/공격 | 방향키: 이동 | Space/Enter: 인접 공격"
+	prompt_label.text = "아군 행동"
 	update_status("전투 재시작.")
 
 
@@ -414,9 +511,20 @@ func return_to_dungeon() -> void:
 	get_tree().change_scene_to_file(DUNGEON_TEST_SCENE_PATH)
 
 
-func update_status(message: String) -> void:
+func update_status(message: String, add_to_log: bool = true) -> void:
 	status_label.text = message
+	if add_to_log:
+		push_action_log(message)
 	update_hud()
+
+
+func push_action_log(message: String) -> void:
+	action_log.append(message)
+	while action_log.size() > 4:
+		action_log.remove_at(0)
+
+	if action_log_label != null:
+		action_log_label.text = " / ".join(action_log)
 
 
 func update_hud() -> void:
@@ -433,6 +541,13 @@ func update_hud() -> void:
 		turn_text = "패배"
 
 	hp_label.text = "보스 HP %d/%d | 적 %d | %s" % [player_hp, PLAYER_MAX_HP, enemy_count, turn_text]
+
+
+func get_battle_bonus_text() -> String:
+	var bonus: Dictionary = combat_event.get("settlement_bonus", {})
+	if bonus.is_empty():
+		return "전투 보너스 없음"
+	return "전투 보너스: %s" % GameState.format_reward_text(bonus)
 
 
 func cell_to_position(cell: Vector2i) -> Vector2:
