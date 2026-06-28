@@ -1,6 +1,5 @@
 extends Node2D
 
-const BossTexture = preload("res://assets/sprites/pixellab/주인공/rotations/south.png")
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
 const BATTLE_TEST_SCENE_PATH: String = "res://scenes/BattleTest.tscn"
 const PLAYER_START_POSITION: Vector2 = Vector2(230, 520)
@@ -111,9 +110,8 @@ func create_player() -> void:
 	player.name = "Player"
 	player.position = GameState.get_field_player_position(PLAYER_START_POSITION)
 
-	var sprite := Sprite2D.new()
+	var sprite := AnimatedSprite2D.new()
 	sprite.name = "BossSprite"
-	sprite.texture = BossTexture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.scale = Vector2(1.15, 1.15)
 	player.add_child(sprite)

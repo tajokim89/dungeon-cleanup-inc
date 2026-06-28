@@ -1,6 +1,5 @@
 extends Node2D
 
-const BossTexture = preload("res://assets/sprites/pixellab/주인공/rotations/south.png")
 const DUNGEON_TEST_SCENE_PATH: String = "res://scenes/DungeonTest.tscn"
 
 const COLOR_BACKGROUND: Color = Color(0.063, 0.063, 0.078)
@@ -123,9 +122,8 @@ func create_player() -> void:
 	player.name = "Player"
 	player.position = Vector2(635, 386)
 
-	var sprite := Sprite2D.new()
+	var sprite := AnimatedSprite2D.new()
 	sprite.name = "BossSprite"
-	sprite.texture = BossTexture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.scale = Vector2(1.15, 1.15)
 	player.add_child(sprite)
