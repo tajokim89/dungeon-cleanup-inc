@@ -2,12 +2,6 @@ extends Node2D
 
 const BossTexture = preload("res://assets/sprites/boss_placeholder.svg")
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
-const TOTAL_TASK_COUNT: int = 3
-const FIELD_MONEY_REWARD: int = 55
-const FIELD_HELL_TRUST_REWARD: int = 6
-const FIELD_HUMAN_REPUTATION_REWARD: int = 1
-const FIELD_HYGIENE_REWARD: int = 5
-const FIELD_ILLEGAL_RISK_REWARD: int = 1
 
 const COLOR_BACKGROUND: Color = Color(0.047, 0.052, 0.061)
 const COLOR_FLOOR: Color = Color(0.102, 0.118, 0.102)
@@ -35,11 +29,17 @@ var task_completed: Dictionary = {}
 var task_visuals: Dictionary = {}
 var task_labels: Dictionary = {}
 var settlement_applied: bool = false
+var current_contract: Dictionary = {}
+var total_task_count: int = 0
 
 
 func _ready() -> void:
+	current_contract = GameState.get_selected_contract()
+	if current_contract.is_empty():
+		current_contract = GameState.get_default_contract()
+
 	build_dungeon()
-	status_label.text = "현장 테스트: 오염 구역을 직접 처리하세요."
+	status_label.text = "%s: 현장 작업을 처리하세요." % String(current_contract.get("title", "현장"))
 	prompt_label.text = "작업 대상 근처에서 E / Space"
 	update_progress_label()
 
@@ -74,30 +74,20 @@ func create_room() -> void:
 
 
 func create_tasks() -> void:
-	create_task(
-		"SlimePuddle",
-		"끈적 점액",
-		"소독 점액통으로 바닥을 닦았습니다.",
-		Vector2(330, 335),
-		Vector2(140, 82),
-		COLOR_SLIME
-	)
-	create_task(
-		"BrokenTrap",
-		"망가진 함정",
-		"스프링과 발판을 다시 맞췄습니다.",
-		Vector2(655, 318),
-		Vector2(132, 72),
-		COLOR_TRAP
-	)
-	create_task(
-		"BonePile",
-		"뼈무더기",
-		"사체 포대에 담아 수거했습니다.",
-		Vector2(905, 452),
-		Vector2(126, 80),
-		COLOR_BONE
-	)
+	var tasks: Array = current_contract.get("tasks", [])
+	total_task_count = tasks.size()
+	for task: Dictionary in tasks:
+		var task_position: Vector2 = task.get("position", Vector2.ZERO)
+		var task_size: Vector2 = task.get("size", Vector2(128, 72))
+		create_task(
+			String(task.get("id", "Task")),
+			String(task.get("label", "작업")),
+			String(task.get("action", "작업을 처리했습니다.")),
+			task_position,
+			task_size,
+			get_task_color(String(task.get("kind", "")))
+		)
+
 	create_interactable(
 		"ReturnDoor",
 		"사무실 복귀문",
@@ -176,9 +166,10 @@ func create_ui() -> void:
 	header.add_child(title_box)
 
 	var title := make_label("버려진 하수 던전", 18, COLOR_GOLD)
+	title.text = String(current_contract.get("title", "던전 현장"))
 	title_box.add_child(title)
 
-	var subtitle := make_label("현장 복구 작업", 12, COLOR_MUTED)
+	var subtitle := make_label(String(current_contract.get("location", "현장 복구 작업")), 12, COLOR_MUTED)
 	title_box.add_child(subtitle)
 
 	header.add_child(make_badge("현장"))
@@ -278,6 +269,20 @@ func create_task(node_name: String, label: String, action: String, position: Vec
 	task_completed[node_name] = false
 
 
+func get_task_color(kind: String) -> Color:
+	match kind:
+		"slime":
+			return COLOR_SLIME
+		"trap":
+			return COLOR_TRAP
+		"bone":
+			return COLOR_BONE
+		"rubble":
+			return COLOR_STONE
+		_:
+			return COLOR_BONE
+
+
 func create_interactable(node_name: String, label: String, action: String, position: Vector2, size: Vector2, color: Color) -> ColorRect:
 	var visual := create_rect("%sVisual" % node_name, Rect2(position - size * 0.5, size), color)
 	var name_label := create_text_label("%sLabel" % node_name, label, position + Vector2(-size.x * 0.5, -size.y * 0.5 - 26), size.x)
@@ -358,9 +363,9 @@ func make_badge(text: String) -> PanelContainer:
 
 
 func update_progress_label() -> void:
-	progress_label.text = "작업 %d/%d" % [completed_task_count, TOTAL_TASK_COUNT]
+	progress_label.text = "작업 %d/%d" % [completed_task_count, total_task_count]
 	if progress_fill != null:
-		var progress_ratio: float = float(completed_task_count) / float(TOTAL_TASK_COUNT)
+		var progress_ratio: float = 1.0 if total_task_count == 0 else float(completed_task_count) / float(total_task_count)
 		progress_fill.size = Vector2(260.0 * progress_ratio, 8.0)
 
 
@@ -407,13 +412,13 @@ func complete_task(task_name: String, target: Interactable) -> void:
 	status_label.text = "현장 작업 완료: %s" % target.label
 	update_progress_label()
 
-	if completed_task_count >= TOTAL_TASK_COUNT:
+	if completed_task_count >= total_task_count:
 		prompt_label.text = "복귀문으로 돌아가세요."
 
 
 func try_return_to_office() -> void:
-	if completed_task_count < TOTAL_TASK_COUNT:
-		status_label.text = "아직 처리할 작업이 남아 있습니다. %d/%d" % [completed_task_count, TOTAL_TASK_COUNT]
+	if completed_task_count < total_task_count:
+		status_label.text = "아직 처리할 작업이 남아 있습니다. %d/%d" % [completed_task_count, total_task_count]
 		return
 
 	call_deferred("return_to_office")
@@ -430,20 +435,4 @@ func apply_field_settlement() -> void:
 
 	settlement_applied = true
 
-	var report: String = "현장 보고: 작업 %d/%d 완료 | 자금 %s | 마왕성 신뢰 %s | 인간 평판 %s | 위생 %s | 불법 리스크 %s" % [
-		completed_task_count,
-		TOTAL_TASK_COUNT,
-		GameState.format_delta(FIELD_MONEY_REWARD),
-		GameState.format_delta(FIELD_HELL_TRUST_REWARD),
-		GameState.format_delta(FIELD_HUMAN_REPUTATION_REWARD),
-		GameState.format_delta(FIELD_HYGIENE_REWARD),
-		GameState.format_delta(FIELD_ILLEGAL_RISK_REWARD),
-	]
-	GameState.apply_field_report(
-		report,
-		FIELD_MONEY_REWARD,
-		FIELD_HELL_TRUST_REWARD,
-		FIELD_HUMAN_REPUTATION_REWARD,
-		FIELD_HYGIENE_REWARD,
-		FIELD_ILLEGAL_RISK_REWARD
-	)
+	GameState.apply_contract_field_report(current_contract, completed_task_count, total_task_count)

@@ -29,6 +29,11 @@ var trust_value_label: Label
 var reputation_value_label: Label
 var hygiene_value_label: Label
 var risk_value_label: Label
+var contract_panel: PanelContainer
+var contract_buttons: Array[Button] = []
+var contract_selection_label: Label
+var contract_detail_label: Label
+var contract_dispatch_button: Button
 
 
 func _ready() -> void:
@@ -37,6 +42,7 @@ func _ready() -> void:
 	if not GameState.changed.is_connected(game_state_changed_callback):
 		GameState.changed.connect(game_state_changed_callback)
 	refresh_hud()
+	refresh_contract_board()
 	if GameState.last_report == "":
 		status_label.text = "사무실 허브 테스트: WASD로 이동"
 	else:
@@ -73,7 +79,7 @@ func create_interactables() -> void:
 	create_interactable(
 		"ContractBoard",
 		"의뢰 게시판",
-		"오늘 접수된 던전 복구 의뢰를 확인합니다. 아직 목록 UI는 다음 슬라이스입니다.",
+		"오늘 접수된 던전 복구 의뢰를 확인합니다.",
 		Vector2(300, 232),
 		Vector2(150, 52),
 		COLOR_BOARD
@@ -105,7 +111,7 @@ func create_interactables() -> void:
 	create_interactable(
 		"DispatchDoor",
 		"출동문",
-		"첫 던전 현장으로 출동합니다.",
+		"선택한 의뢰 현장으로 출동합니다.",
 		Vector2(980, 492),
 		Vector2(84, 130),
 		COLOR_DOOR
@@ -201,6 +207,7 @@ func create_ui() -> void:
 	risk_value_label = create_stat_chip(stat_row, "불법 리스크", COLOR_RISK, 132.0)
 
 	create_message_panel(canvas)
+	create_contract_board_panel(canvas)
 
 
 func create_message_panel(canvas: CanvasLayer) -> void:
@@ -237,6 +244,100 @@ func create_message_panel(canvas: CanvasLayer) -> void:
 
 	message_layout.add_child(status_label)
 	message_layout.add_child(prompt_label)
+
+
+func create_contract_board_panel(canvas: CanvasLayer) -> void:
+	contract_panel = PanelContainer.new()
+	contract_panel.name = "ContractBoardPanel"
+	contract_panel.visible = false
+	contract_panel.anchor_left = 0.5
+	contract_panel.anchor_top = 0.5
+	contract_panel.anchor_right = 0.5
+	contract_panel.anchor_bottom = 0.5
+	contract_panel.offset_left = -390
+	contract_panel.offset_top = -225
+	contract_panel.offset_right = 390
+	contract_panel.offset_bottom = 225
+	contract_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_GOLD, 2))
+	canvas.add_child(contract_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	contract_panel.add_child(margin)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 14)
+	margin.add_child(layout)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	layout.add_child(header)
+
+	var title_box := VBoxContainer.new()
+	title_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_box.add_theme_constant_override("separation", 2)
+	header.add_child(title_box)
+
+	var title := make_label("의뢰 게시판", 20, COLOR_GOLD)
+	title_box.add_child(title)
+
+	contract_selection_label = make_label("", 13, COLOR_MUTED)
+	title_box.add_child(contract_selection_label)
+
+	var close_button := Button.new()
+	close_button.text = "닫기"
+	close_button.custom_minimum_size = Vector2(82.0, 34.0)
+	close_button.pressed.connect(close_contract_board)
+	header.add_child(close_button)
+
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 18)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	layout.add_child(body)
+
+	var list_box := VBoxContainer.new()
+	list_box.add_theme_constant_override("separation", 8)
+	list_box.custom_minimum_size = Vector2(285.0, 0.0)
+	body.add_child(list_box)
+
+	for contract: Dictionary in GameState.get_field_contracts():
+		var contract_id := String(contract.get("id", ""))
+		var button := Button.new()
+		button.text = String(contract.get("title", "의뢰"))
+		button.custom_minimum_size = Vector2(285.0, 48.0)
+		button.set_meta("contract_id", contract_id)
+		button.pressed.connect(_on_contract_button_pressed.bind(contract_id))
+		contract_buttons.append(button)
+		list_box.add_child(button)
+
+	var detail_box := VBoxContainer.new()
+	detail_box.add_theme_constant_override("separation", 12)
+	detail_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(detail_box)
+
+	contract_detail_label = make_label("", 15, COLOR_TEXT)
+	contract_detail_label.custom_minimum_size = Vector2(0.0, 210.0)
+	contract_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	contract_detail_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail_box.add_child(contract_detail_label)
+
+	var action_row := HBoxContainer.new()
+	action_row.alignment = BoxContainer.ALIGNMENT_END
+	action_row.add_theme_constant_override("separation", 8)
+	detail_box.add_child(action_row)
+
+	var choose_hint := make_label("계약서 검토", 13, COLOR_MUTED)
+	choose_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(choose_hint)
+
+	contract_dispatch_button = Button.new()
+	contract_dispatch_button.text = "출동"
+	contract_dispatch_button.custom_minimum_size = Vector2(110.0, 36.0)
+	contract_dispatch_button.pressed.connect(go_to_dungeon)
+	action_row.add_child(contract_dispatch_button)
 
 
 func create_wall(node_name: String, rect: Rect2) -> void:
@@ -357,6 +458,72 @@ func make_badge(text: String) -> PanelContainer:
 	return panel
 
 
+func open_contract_board() -> void:
+	if contract_panel == null:
+		return
+
+	refresh_contract_board()
+	contract_panel.visible = true
+	if player != null:
+		player.set_physics_process(false)
+		player.set_process_unhandled_input(false)
+
+
+func close_contract_board() -> void:
+	if contract_panel != null:
+		contract_panel.visible = false
+
+	if player != null:
+		player.set_physics_process(true)
+		player.set_process_unhandled_input(true)
+
+
+func refresh_contract_board() -> void:
+	if contract_selection_label == null or contract_detail_label == null:
+		return
+
+	var selected_contract := GameState.get_selected_contract()
+	var selected_id := String(selected_contract.get("id", ""))
+	if selected_contract.is_empty():
+		contract_selection_label.text = "선택된 의뢰 없음"
+		contract_detail_label.text = "접수된 현장 의뢰 %d건\n\n현장 정보 대기" % GameState.get_field_contracts().size()
+		if contract_dispatch_button != null:
+			contract_dispatch_button.disabled = true
+	else:
+		contract_selection_label.text = "선택: %s" % String(selected_contract.get("title", "의뢰"))
+		contract_detail_label.text = get_contract_detail_text(selected_contract)
+		if contract_dispatch_button != null:
+			contract_dispatch_button.disabled = false
+
+	for button: Button in contract_buttons:
+		var contract_id := String(button.get_meta("contract_id", ""))
+		var contract := GameState.get_contract_by_id(contract_id)
+		var prefix := "[선택] " if contract_id == selected_id else ""
+		button.text = "%s%s" % [prefix, String(contract.get("title", "의뢰"))]
+
+
+func get_contract_detail_text(contract: Dictionary) -> String:
+	var tasks: Array = contract.get("tasks", [])
+	return "%s\n%s\n\n의뢰처: %s\n현장: %s\n작업: %d개\n보상: %s" % [
+		String(contract.get("title", "의뢰")),
+		String(contract.get("summary", "")),
+		String(contract.get("client", "")),
+		String(contract.get("location", "")),
+		tasks.size(),
+		GameState.get_reward_text(contract)
+	]
+
+
+func _on_contract_button_pressed(contract_id: String) -> void:
+	if not GameState.select_contract(contract_id):
+		status_label.text = "의뢰 선택에 실패했습니다."
+		return
+
+	var contract := GameState.get_selected_contract()
+	status_label.text = "의뢰 선택: %s" % String(contract.get("title", "의뢰"))
+	refresh_contract_board()
+
+
 func _on_interaction_target_changed(label: String) -> void:
 	if label == "":
 		prompt_label.text = "오브젝트 근처에서 E / Space"
@@ -365,11 +532,20 @@ func _on_interaction_target_changed(label: String) -> void:
 
 
 func _on_player_interaction_requested(target: Interactable) -> void:
-	if String(target.name) == "DispatchDoor":
+	var target_name := String(target.name)
+	if target_name == "ContractBoard":
+		open_contract_board()
+		return
+
+	if target_name == "DispatchDoor":
 		call_deferred("go_to_dungeon")
 
 
 func _on_interactable_interacted(label: String, action: String) -> void:
+	if label == "의뢰 게시판":
+		status_label.text = "%s: 접수된 현장 의뢰를 확인합니다." % label
+		return
+
 	if label == "회사 장부":
 		status_label.text = "%s: %s" % [label, GameState.get_company_status_text()]
 		return
@@ -379,6 +555,7 @@ func _on_interactable_interacted(label: String, action: String) -> void:
 
 func _on_game_state_changed() -> void:
 	refresh_hud()
+	refresh_contract_board()
 
 
 func refresh_hud() -> void:
@@ -391,4 +568,10 @@ func refresh_hud() -> void:
 
 
 func go_to_dungeon() -> void:
+	if not GameState.has_selected_contract():
+		status_label.text = "출동할 의뢰를 먼저 선택하세요."
+		open_contract_board()
+		return
+
+	close_contract_board()
 	get_tree().change_scene_to_file(DUNGEON_TEST_SCENE_PATH)
