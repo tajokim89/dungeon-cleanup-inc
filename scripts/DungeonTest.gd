@@ -2,6 +2,7 @@ extends Node2D
 
 const BossTexture = preload("res://assets/sprites/boss_placeholder.svg")
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
+const BATTLE_TEST_SCENE_PATH: String = "res://scenes/BattleTest.tscn"
 
 const COLOR_BACKGROUND: Color = Color(0.047, 0.052, 0.061)
 const COLOR_FLOOR: Color = Color(0.102, 0.118, 0.102)
@@ -11,6 +12,7 @@ const COLOR_SLIME: Color = Color(0.298, 0.533, 0.267)
 const COLOR_TRAP: Color = Color(0.573, 0.439, 0.22)
 const COLOR_BONE: Color = Color(0.753, 0.698, 0.573)
 const COLOR_EXIT: Color = Color(0.318, 0.373, 0.533)
+const COLOR_COMBAT: Color = Color(0.651, 0.263, 0.239)
 const COLOR_COMPLETED: Color = Color(0.224, 0.443, 0.329)
 const COLOR_TEXT: Color = Color(0.902, 0.863, 0.784)
 const COLOR_GOLD: Color = Color(0.851, 0.694, 0.373)
@@ -39,7 +41,10 @@ func _ready() -> void:
 		current_contract = GameState.get_default_contract()
 
 	build_dungeon()
-	status_label.text = "%s: 현장 작업을 처리하세요." % String(current_contract.get("title", "현장"))
+	if GameState.field_battle_resolved and GameState.last_battle_report != "":
+		status_label.text = GameState.last_battle_report
+	else:
+		status_label.text = "%s: 현장 작업을 처리하세요." % String(current_contract.get("title", "현장"))
 	prompt_label.text = "작업 대상 근처에서 E / Space"
 	update_progress_label()
 
@@ -87,6 +92,8 @@ func create_tasks() -> void:
 			task_size,
 			get_task_color(String(task.get("kind", "")))
 		)
+
+	create_combat_event()
 
 	create_interactable(
 		"ReturnDoor",
@@ -267,6 +274,34 @@ func create_task(node_name: String, label: String, action: String, position: Vec
 	var visual := create_interactable(node_name, label, action, position, size, color)
 	task_visuals[node_name] = visual
 	task_completed[node_name] = false
+	if GameState.is_field_task_completed(node_name):
+		restore_completed_task(node_name, label)
+
+
+func create_combat_event() -> void:
+	if not GameState.should_spawn_combat_event(current_contract):
+		return
+
+	var combat_event := GameState.get_combat_event(current_contract)
+	create_interactable(
+		"CombatEvent",
+		String(combat_event.get("label", "전투 이벤트")),
+		String(combat_event.get("action", "현장 전투를 시작합니다.")),
+		combat_event.get("position", Vector2(760, 465)),
+		combat_event.get("size", Vector2(132, 84)),
+		COLOR_COMBAT
+	)
+
+
+func restore_completed_task(task_name: String, task_label: String) -> void:
+	task_completed[task_name] = true
+	completed_task_count += 1
+
+	var interactable: Interactable = get_node_or_null(task_name) as Interactable
+	if interactable != null:
+		interactable.action = "%s은 이미 처리했습니다." % task_label
+
+	apply_task_completed_visual(task_name, task_label)
 
 
 func get_task_color(kind: String) -> Color:
@@ -382,6 +417,10 @@ func _on_player_interaction_requested(target: Interactable) -> void:
 		try_return_to_office()
 		return
 
+	if target_name == "CombatEvent":
+		call_deferred("go_to_battle")
+		return
+
 	if task_completed.has(target_name):
 		complete_task(target_name, target)
 
@@ -399,26 +438,37 @@ func complete_task(task_name: String, target: Interactable) -> void:
 	task_completed[task_name] = true
 	completed_task_count += 1
 	target.action = "%s은 이미 처리했습니다." % target.label
+	GameState.mark_field_task_completed(task_name)
 
+	apply_task_completed_visual(task_name, target.label)
+	status_label.text = "현장 작업 완료: %s" % target.label
+	update_progress_label()
+
+	if completed_task_count >= total_task_count:
+		if GameState.should_spawn_combat_event(current_contract):
+			prompt_label.text = "남은 전투 이벤트를 처리하세요."
+		else:
+			prompt_label.text = "복귀문으로 돌아가세요."
+
+
+func apply_task_completed_visual(task_name: String, task_label: String) -> void:
 	var visual: ColorRect = task_visuals[task_name] as ColorRect
 	if visual != null:
 		visual.color = COLOR_COMPLETED
 
 	var label_node: Label = task_labels[task_name] as Label
 	if label_node != null:
-		label_node.text = "%s 완료" % target.label
+		label_node.text = "%s 완료" % task_label
 		label_node.add_theme_color_override("font_color", COLOR_MUTED)
-
-	status_label.text = "현장 작업 완료: %s" % target.label
-	update_progress_label()
-
-	if completed_task_count >= total_task_count:
-		prompt_label.text = "복귀문으로 돌아가세요."
 
 
 func try_return_to_office() -> void:
 	if completed_task_count < total_task_count:
 		status_label.text = "아직 처리할 작업이 남아 있습니다. %d/%d" % [completed_task_count, total_task_count]
+		return
+
+	if GameState.should_spawn_combat_event(current_contract):
+		status_label.text = "현장을 방해하는 전투 이벤트를 먼저 해결하세요."
 		return
 
 	call_deferred("return_to_office")
@@ -427,6 +477,10 @@ func try_return_to_office() -> void:
 func return_to_office() -> void:
 	apply_field_settlement()
 	get_tree().change_scene_to_file(OFFICE_SCENE_PATH)
+
+
+func go_to_battle() -> void:
+	get_tree().change_scene_to_file(BATTLE_TEST_SCENE_PATH)
 
 
 func apply_field_settlement() -> void:

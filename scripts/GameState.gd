@@ -48,7 +48,22 @@ const FIELD_CONTRACTS: Array[Dictionary] = [
 				"position": Vector2(905, 452),
 				"size": Vector2(126, 80)
 			}
-		]
+		],
+		"combat_event": {
+			"id": "sewer_holdout",
+			"title": "하수 던전 잔당 진압",
+			"label": "소란스러운 잔당",
+			"action": "청소 작업을 방해하는 탐사대 잔당과 교전합니다.",
+			"position": Vector2(760, 465),
+			"size": Vector2(132, 84),
+			"settlement_bonus": {
+				"money": 15,
+				"hell_trust": 2,
+				"human_reputation": 0,
+				"hygiene": 0,
+				"illegal_risk": -1
+			}
+		}
 	},
 	{
 		"id": "crypt_reset",
@@ -140,6 +155,9 @@ var hygiene: int = INITIAL_HYGIENE
 var illegal_risk: int = INITIAL_ILLEGAL_RISK
 var last_report: String = ""
 var selected_contract_id: String = ""
+var field_completed_task_ids: Array[String] = []
+var field_battle_resolved: bool = false
+var last_battle_report: String = ""
 
 
 func reset() -> void:
@@ -151,6 +169,7 @@ func reset() -> void:
 	illegal_risk = INITIAL_ILLEGAL_RISK
 	last_report = ""
 	selected_contract_id = ""
+	clear_field_operation_state()
 	changed.emit()
 
 
@@ -215,12 +234,14 @@ func select_contract(contract_id: String) -> bool:
 		return false
 
 	selected_contract_id = contract_id
+	clear_field_operation_state()
 	changed.emit()
 	return true
 
 
 func clear_selected_contract() -> void:
 	selected_contract_id = ""
+	clear_field_operation_state()
 	changed.emit()
 
 
@@ -236,6 +257,10 @@ func get_selected_contract() -> Dictionary:
 
 func get_reward_text(contract: Dictionary) -> String:
 	var reward: Dictionary = contract.get("reward", {})
+	return format_reward_text(reward)
+
+
+func format_reward_text(reward: Dictionary) -> String:
 	return "자금 %s / 신뢰 %s / 평판 %s / 위생 %s / 리스크 %s" % [
 		format_delta(int(reward.get("money", 0))),
 		format_delta(int(reward.get("hell_trust", 0))),
@@ -245,16 +270,71 @@ func get_reward_text(contract: Dictionary) -> String:
 	]
 
 
+func get_combat_event(contract: Dictionary) -> Dictionary:
+	var combat_event: Dictionary = contract.get("combat_event", {})
+	return combat_event.duplicate(true)
+
+
+func contract_has_combat_event(contract: Dictionary) -> bool:
+	return not get_combat_event(contract).is_empty()
+
+
+func should_spawn_combat_event(contract: Dictionary) -> bool:
+	return contract_has_combat_event(contract) and not field_battle_resolved
+
+
+func get_settlement_reward(contract: Dictionary) -> Dictionary:
+	var reward: Dictionary = contract.get("reward", {}).duplicate(true)
+	if not field_battle_resolved:
+		return reward
+
+	var combat_event := get_combat_event(contract)
+	var bonus: Dictionary = combat_event.get("settlement_bonus", {})
+	for key: String in ["money", "hell_trust", "human_reputation", "hygiene", "illegal_risk"]:
+		reward[key] = int(reward.get(key, 0)) + int(bonus.get(key, 0))
+	return reward
+
+
+func mark_field_task_completed(task_id: String) -> void:
+	if field_completed_task_ids.has(task_id):
+		return
+
+	field_completed_task_ids.append(task_id)
+	changed.emit()
+
+
+func is_field_task_completed(task_id: String) -> bool:
+	return field_completed_task_ids.has(task_id)
+
+
+func set_field_battle_resolved(report: String) -> void:
+	field_battle_resolved = true
+	last_battle_report = report
+	changed.emit()
+
+
+func clear_field_operation_state() -> void:
+	field_completed_task_ids.clear()
+	field_battle_resolved = false
+	last_battle_report = ""
+
+
 func apply_contract_field_report(contract: Dictionary, completed_count: int, total_count: int) -> void:
-	var reward: Dictionary = contract.get("reward", {})
-	var report: String = "%s 보고: 작업 %d/%d 완료 | %s" % [
+	var reward := get_settlement_reward(contract)
+	var battle_result_text := ""
+	if field_battle_resolved:
+		battle_result_text = " | 전투 해결"
+
+	var report: String = "%s 보고: 작업 %d/%d 완료%s | %s" % [
 		String(contract.get("title", "현장")),
 		completed_count,
 		total_count,
-		get_reward_text(contract)
+		battle_result_text,
+		format_reward_text(reward)
 	]
 
 	selected_contract_id = ""
+	clear_field_operation_state()
 	apply_field_report(
 		report,
 		int(reward.get("money", 0)),
