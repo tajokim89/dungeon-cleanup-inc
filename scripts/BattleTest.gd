@@ -11,8 +11,17 @@ const GRID_HEIGHT: int = 6
 const CELL_SIZE: float = 68.0
 const PLAYER_MAX_HP: int = 12
 const PLAYER_ATTACK: int = 3
+const PLAYER_SKILL_DAMAGE: int = 2
 const PLAYER_MOVE_RANGE: int = 2
+const PLAYER_SKILL_RANGE: int = 2
 const UNIT_SPRITE_SCALE: Vector2 = Vector2(0.66, 0.66)
+const PHASE_CHOOSE_ACTION: String = "choose_action"
+const PHASE_SELECT_MOVE_TILE: String = "select_move_tile"
+const PHASE_SELECT_ATTACK_TARGET: String = "select_attack_target"
+const PHASE_SELECT_SKILL_TARGET: String = "select_skill_target"
+const PHASE_ENEMY_TURN: String = "enemy_turn"
+const PHASE_VICTORY: String = "victory"
+const PHASE_DEFEAT: String = "defeat"
 
 const COLOR_BACKGROUND: Color = Color(0.05, 0.052, 0.061)
 const COLOR_TILE_A: Color = Color(0.11, 0.119, 0.137)
@@ -22,7 +31,9 @@ const COLOR_PLAYER: Color = Color(0.502, 0.686, 0.408)
 const COLOR_ENEMY: Color = Color(0.671, 0.294, 0.271)
 const COLOR_MOVE_HIGHLIGHT: Color = Color(0.345, 0.557, 0.769, 0.42)
 const COLOR_ATTACK_HIGHLIGHT: Color = Color(0.827, 0.361, 0.294, 0.52)
+const COLOR_SKILL_HIGHLIGHT: Color = Color(0.361, 0.784, 0.741, 0.46)
 const COLOR_SELECTED_HIGHLIGHT: Color = Color(0.851, 0.694, 0.373, 0.35)
+const COLOR_CURSOR_HIGHLIGHT: Color = Color(1.0, 0.894, 0.518, 0.75)
 const COLOR_PANEL: Color = Color(0.078, 0.083, 0.098)
 const COLOR_PANEL_DARK: Color = Color(0.047, 0.052, 0.063)
 const COLOR_TEXT: Color = Color(0.902, 0.863, 0.784)
@@ -34,9 +45,14 @@ const COLOR_SUCCESS: Color = Color(0.494, 0.686, 0.443)
 var current_contract: Dictionary = {}
 var combat_event: Dictionary = {}
 var player_cell: Vector2i = Vector2i(0, 2)
+var cursor_cell: Vector2i = player_cell
 var player_hp: int = PLAYER_MAX_HP
 var enemies: Array[Dictionary] = []
-var turn_state: String = "player"
+var battle_phase: String = PHASE_CHOOSE_ACTION
+var has_moved: bool = false
+var has_acted: bool = false
+var player_defending: bool = false
+var skill_used: bool = false
 var board_layer: Node2D
 var highlight_layer: Node2D
 var unit_layer: Node2D
@@ -46,6 +62,15 @@ var result_label: Label
 var status_label: Label
 var action_log_label: Label
 var prompt_label: Label
+var action_panel: PanelContainer
+var action_detail_label: Label
+var target_info_label: Label
+var move_button: Button
+var attack_button: Button
+var defend_button: Button
+var skill_button: Button
+var flee_button: Button
+var wait_button: Button
 var retry_button: Button
 var return_button: Button
 var action_log: Array[String] = []
@@ -66,7 +91,7 @@ func _ready() -> void:
 	setup_enemies()
 	build_battle()
 	update_units()
-	update_status("전투 시작: 이동하거나 인접한 적을 공격하세요.")
+	start_player_turn("전투 시작: 행동을 선택하세요.")
 
 
 func setup_enemies() -> void:
@@ -137,6 +162,16 @@ func create_ui() -> void:
 	canvas.name = "CanvasLayer"
 	add_child(canvas)
 
+	var board_input_area := Control.new()
+	board_input_area.name = "BoardInputArea"
+	board_input_area.offset_left = BOARD_ORIGIN.x
+	board_input_area.offset_top = BOARD_ORIGIN.y
+	board_input_area.offset_right = BOARD_ORIGIN.x + (float(GRID_WIDTH) * CELL_SIZE)
+	board_input_area.offset_bottom = BOARD_ORIGIN.y + (float(GRID_HEIGHT) * CELL_SIZE)
+	board_input_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	board_input_area.gui_input.connect(_on_board_gui_input)
+	canvas.add_child(board_input_area)
+
 	var panel := PanelContainer.new()
 	panel.name = "StatusPanel"
 	panel.offset_left = 24
@@ -194,6 +229,57 @@ func create_ui() -> void:
 	result_label.custom_minimum_size = Vector2(0.0, 22.0)
 	layout.add_child(result_label)
 
+	action_panel = PanelContainer.new()
+	action_panel.name = "ActionPanel"
+	action_panel.offset_left = 870
+	action_panel.offset_top = 20
+	action_panel.offset_right = 1246
+	action_panel.offset_bottom = 342
+	action_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_TILE_BORDER, 2))
+	canvas.add_child(action_panel)
+
+	var action_margin := MarginContainer.new()
+	action_margin.add_theme_constant_override("margin_left", 16)
+	action_margin.add_theme_constant_override("margin_top", 14)
+	action_margin.add_theme_constant_override("margin_right", 16)
+	action_margin.add_theme_constant_override("margin_bottom", 14)
+	action_panel.add_child(action_margin)
+
+	var action_layout := VBoxContainer.new()
+	action_layout.add_theme_constant_override("separation", 10)
+	action_margin.add_child(action_layout)
+
+	var action_title := make_label("전투 명령", 18, COLOR_GOLD)
+	action_layout.add_child(action_title)
+
+	action_detail_label = make_label("행동을 선택하세요.", 13, COLOR_MUTED)
+	action_detail_label.custom_minimum_size = Vector2(0.0, 44.0)
+	action_layout.add_child(action_detail_label)
+
+	var action_grid := GridContainer.new()
+	action_grid.columns = 2
+	action_grid.add_theme_constant_override("h_separation", 8)
+	action_grid.add_theme_constant_override("v_separation", 8)
+	action_layout.add_child(action_grid)
+
+	move_button = make_action_button("이동", Callable(self, "_on_move_pressed"))
+	attack_button = make_action_button("공격", Callable(self, "_on_attack_pressed"))
+	defend_button = make_action_button("방어", Callable(self, "_on_defend_pressed"))
+	skill_button = make_action_button("스킬", Callable(self, "_on_skill_pressed"))
+	flee_button = make_action_button("철수", Callable(self, "_on_flee_pressed"))
+	wait_button = make_action_button("대기", Callable(self, "_on_wait_pressed"))
+
+	action_grid.add_child(move_button)
+	action_grid.add_child(attack_button)
+	action_grid.add_child(defend_button)
+	action_grid.add_child(skill_button)
+	action_grid.add_child(flee_button)
+	action_grid.add_child(wait_button)
+
+	target_info_label = make_label("대상 정보 없음", 13, COLOR_MUTED)
+	target_info_label.custom_minimum_size = Vector2(0.0, 46.0)
+	action_layout.add_child(target_info_label)
+
 	var message_panel := PanelContainer.new()
 	message_panel.name = "MessagePanel"
 	message_panel.anchor_left = 0.0
@@ -227,6 +313,15 @@ func create_ui() -> void:
 	message_layout.add_child(status_label)
 	message_layout.add_child(action_log_label)
 	message_layout.add_child(prompt_label)
+
+
+func make_action_button(text: String, callback: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(158.0, 38.0)
+	button.pressed.connect(callback)
+	return button
 
 
 func update_units() -> void:
@@ -320,7 +415,7 @@ func refresh_highlights() -> void:
 	for child in highlight_layer.get_children():
 		child.queue_free()
 
-	if turn_state != "player":
+	if not is_player_control_phase():
 		return
 
 	add_cell_highlight(player_cell, COLOR_SELECTED_HIGHLIGHT, "SelectedCell")
@@ -331,13 +426,18 @@ func refresh_highlights() -> void:
 			if cell == player_cell:
 				continue
 
-			if get_enemy_index_at_cell(cell) != -1:
-				if get_cell_distance(player_cell, cell) == 1:
+			var enemy_index := get_enemy_index_at_cell(cell)
+			if battle_phase == PHASE_SELECT_ATTACK_TARGET:
+				if enemy_index != -1 and is_attackable_enemy_cell(cell):
 					add_cell_highlight(cell, COLOR_ATTACK_HIGHLIGHT, "AttackCell_%d_%d" % [x, y])
-				continue
-
-			if get_cell_distance(player_cell, cell) <= PLAYER_MOVE_RANGE and not is_cell_occupied(cell):
+			elif battle_phase == PHASE_SELECT_SKILL_TARGET:
+				if enemy_index != -1 and is_skill_target_cell(cell):
+					add_cell_highlight(cell, COLOR_SKILL_HIGHLIGHT, "SkillCell_%d_%d" % [x, y])
+			elif battle_phase == PHASE_SELECT_MOVE_TILE and is_valid_move_cell(cell):
 				add_cell_highlight(cell, COLOR_MOVE_HIGHLIGHT, "MoveCell_%d_%d" % [x, y])
+
+	if battle_phase != PHASE_CHOOSE_ACTION and is_cell_inside(cursor_cell):
+		add_cell_outline(cursor_cell, COLOR_CURSOR_HIGHLIGHT, "CursorCell")
 
 
 func add_cell_highlight(cell: Vector2i, color: Color, node_name: String) -> void:
@@ -350,15 +450,48 @@ func add_cell_highlight(cell: Vector2i, color: Color, node_name: String) -> void
 	highlight_layer.add_child(highlight)
 
 
+func add_cell_outline(cell: Vector2i, color: Color, node_name: String) -> void:
+	var outline := PanelContainer.new()
+	outline.name = node_name
+	outline.position = cell_to_position(cell) + Vector2(2.0, 2.0)
+	outline.size = Vector2(CELL_SIZE - 4.0, CELL_SIZE - 4.0)
+	outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0)
+	style.border_color = color
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(2)
+	outline.add_theme_stylebox_override("panel", style)
+	highlight_layer.add_child(outline)
+
+
+func _on_board_gui_input(event: InputEvent) -> void:
+	if not is_player_control_phase():
+		return
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if not mouse_event.pressed:
+			return
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			cancel_action_selection()
+			get_viewport().set_input_as_handled()
+			return
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			var cell := board_local_to_cell(mouse_event.position)
+			cursor_cell = cell
+			handle_player_cell_action(cell)
+			get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if turn_state == "won":
+	if battle_phase == PHASE_VICTORY:
 		if event is InputEventKey:
 			var win_key := event as InputEventKey
 			if win_key.pressed and not win_key.echo and (win_key.keycode == KEY_ENTER or win_key.keycode == KEY_SPACE):
 				return_to_dungeon()
 		return
 
-	if turn_state == "lost":
+	if battle_phase == PHASE_DEFEAT:
 		if event is InputEventKey:
 			var lose_key := event as InputEventKey
 			if lose_key.pressed and not lose_key.echo and lose_key.keycode == KEY_R:
@@ -367,15 +500,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				return_to_dungeon()
 		return
 
-	if turn_state != "player":
+	if not is_player_control_phase():
 		return
 
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			cancel_action_selection()
+			return
 		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			var cell := point_to_cell(mouse_event.position)
-			if is_cell_inside(cell):
-				handle_player_cell_action(cell)
+			handle_player_cell_action(cell)
 
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
@@ -384,22 +519,69 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func handle_player_key(keycode: Key) -> void:
-	var offset := Vector2i.ZERO
+	var offset := key_to_grid_offset(keycode)
+	if offset != Vector2i.ZERO:
+		handle_cursor_direction(offset)
+		return
+
+	match keycode:
+		KEY_ESCAPE:
+			cancel_action_selection()
+		KEY_SPACE, KEY_ENTER:
+			confirm_cursor_action()
+		KEY_1:
+			_on_move_pressed()
+		KEY_2:
+			_on_attack_pressed()
+		KEY_3:
+			_on_defend_pressed()
+		KEY_4:
+			_on_skill_pressed()
+		KEY_5:
+			_on_flee_pressed()
+		KEY_6:
+			_on_wait_pressed()
+
+
+func key_to_grid_offset(keycode: Key) -> Vector2i:
 	match keycode:
 		KEY_LEFT, KEY_A:
-			offset = Vector2i.LEFT
+			return Vector2i.LEFT
 		KEY_RIGHT, KEY_D:
-			offset = Vector2i.RIGHT
+			return Vector2i.RIGHT
 		KEY_UP, KEY_W:
-			offset = Vector2i.UP
+			return Vector2i.UP
 		KEY_DOWN, KEY_S:
-			offset = Vector2i.DOWN
-		KEY_SPACE, KEY_ENTER:
-			attack_first_adjacent_enemy()
-			return
+			return Vector2i.DOWN
+	return Vector2i.ZERO
 
-	if offset != Vector2i.ZERO:
-		handle_player_cell_action(player_cell + offset)
+
+func handle_cursor_direction(offset: Vector2i) -> void:
+	if battle_phase == PHASE_CHOOSE_ACTION:
+		if has_moved:
+			update_status("이번 턴에는 이미 이동했습니다.")
+			return
+		enter_move_selection(false)
+
+	if battle_phase == PHASE_SELECT_ATTACK_TARGET or battle_phase == PHASE_SELECT_SKILL_TARGET:
+		cycle_target_cursor(offset)
+		return
+
+	cursor_cell = clamp_cell_to_board(cursor_cell + offset)
+	refresh_highlights()
+	update_cursor_status(false)
+
+
+func confirm_cursor_action() -> void:
+	match battle_phase:
+		PHASE_SELECT_MOVE_TILE:
+			try_move_to_cell(cursor_cell)
+		PHASE_SELECT_ATTACK_TARGET:
+			try_attack_cell(cursor_cell)
+		PHASE_SELECT_SKILL_TARGET:
+			try_skill_cell(cursor_cell)
+		_:
+			update_status("먼저 행동 메뉴에서 명령을 선택하세요.")
 
 
 func handle_player_cell_action(cell: Vector2i) -> void:
@@ -407,40 +589,202 @@ func handle_player_cell_action(cell: Vector2i) -> void:
 		update_status("전투 구역 밖으로는 이동할 수 없습니다.")
 		return
 
-	var enemy_index := get_enemy_index_at_cell(cell)
-	if enemy_index != -1:
-		if get_cell_distance(player_cell, cell) == 1:
-			player_attack(enemy_index)
-			if turn_state == "player":
-				end_player_turn()
-		else:
-			update_status("공격하려면 인접해야 합니다.")
+	match battle_phase:
+		PHASE_SELECT_MOVE_TILE:
+			try_move_to_cell(cell)
+		PHASE_SELECT_ATTACK_TARGET:
+			try_attack_cell(cell)
+		PHASE_SELECT_SKILL_TARGET:
+			try_skill_cell(cell)
+		_:
+			update_status("먼저 행동 메뉴에서 명령을 선택하세요.")
+
+
+func _on_move_pressed() -> void:
+	if not is_player_control_phase():
+		return
+	if has_moved:
+		update_status("이번 턴에는 이미 이동했습니다.")
 		return
 
-	if get_cell_distance(player_cell, cell) > PLAYER_MOVE_RANGE:
-		update_status("이동 범위를 벗어났습니다.")
+	enter_move_selection(true)
+
+
+func _on_attack_pressed() -> void:
+	if not is_player_control_phase():
+		return
+	if has_acted:
+		update_status("이번 턴에는 이미 행동했습니다.")
+		return
+	if not has_adjacent_enemy():
+		update_status("공격 대상 없음: 기본 공격은 인접한 적에게만 가능합니다.")
+		update_target_info_label("공격 대상 없음\n적과 인접한 뒤 다시 선택하세요.")
 		return
 
-	if is_cell_occupied(cell):
-		update_status("이미 점유된 칸입니다.")
+	enter_attack_selection()
+
+
+func _on_defend_pressed() -> void:
+	if not is_player_control_phase():
+		return
+	if has_acted:
+		update_status("이번 턴에는 이미 행동했습니다.")
 		return
 
-	player_cell = cell
-	update_status("보스를 이동했습니다.")
-	update_units()
+	player_defending = true
+	has_acted = true
+	update_status("방어 태세: 다음 피해가 감소합니다.")
 	end_player_turn()
 
 
-func attack_first_adjacent_enemy() -> void:
-	for index in range(enemies.size()):
-		var enemy: Dictionary = enemies[index]
-		if get_cell_distance(player_cell, enemy.get("cell", Vector2i.ZERO)) == 1:
-			player_attack(index)
-			if turn_state == "player":
-				end_player_turn()
-			return
+func _on_skill_pressed() -> void:
+	if not is_player_control_phase():
+		return
+	if has_acted:
+		update_status("이번 턴에는 이미 행동했습니다.")
+		return
+	if skill_used:
+		update_status("이번 전투에서는 이미 스킬을 사용했습니다.")
+		return
+	if not has_skill_target():
+		update_status("스킬 대상 없음: 사거리 %d칸 안의 적이 없습니다." % PLAYER_SKILL_RANGE)
+		update_target_info_label("스킬 대상 없음\n사거리 %d칸 안의 적이 필요합니다." % PLAYER_SKILL_RANGE)
+		return
 
-	update_status("인접한 적이 없습니다.")
+	enter_skill_selection()
+
+
+func _on_flee_pressed() -> void:
+	if not is_player_control_phase():
+		return
+
+	update_status("철수: 전투를 해결하지 않고 던전으로 복귀합니다.")
+	return_to_dungeon()
+
+
+func _on_wait_pressed() -> void:
+	if not is_player_control_phase():
+		return
+
+	has_acted = true
+	update_status("대기: 턴을 넘깁니다.")
+	end_player_turn()
+
+
+func enter_move_selection(show_prompt: bool) -> void:
+	battle_phase = PHASE_SELECT_MOVE_TILE
+	cursor_cell = get_first_move_target_cell()
+	if show_prompt:
+		update_status("이동할 칸을 선택하세요. 클릭하거나 WASD로 커서 이동 후 Enter/Space로 확정.")
+	else:
+		update_status("이동 선택: WASD로 커서 이동, Enter/Space로 확정.", false)
+	refresh_highlights()
+	update_action_menu()
+
+
+func enter_attack_selection() -> void:
+	battle_phase = PHASE_SELECT_ATTACK_TARGET
+	cursor_cell = get_first_attack_target_cell()
+	update_status("공격 대상 선택: WASD로 대상 전환, Enter/Space로 확정.")
+	refresh_highlights()
+	update_cursor_status(false)
+	update_action_menu()
+
+
+func enter_skill_selection() -> void:
+	battle_phase = PHASE_SELECT_SKILL_TARGET
+	cursor_cell = get_first_skill_target_cell()
+	update_status("스킬 대상 선택: WASD로 대상 전환, Enter/Space로 확정.")
+	refresh_highlights()
+	update_cursor_status(false)
+	update_action_menu()
+
+
+func update_cursor_status(add_to_log: bool) -> void:
+	match battle_phase:
+		PHASE_SELECT_MOVE_TILE:
+			if is_valid_move_cell(cursor_cell):
+				update_status("이동 후보: %s. Enter/Space로 확정." % format_cell(cursor_cell), add_to_log)
+			else:
+				update_status("이동 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
+		PHASE_SELECT_ATTACK_TARGET:
+			if is_attackable_enemy_cell(cursor_cell):
+				update_status("공격 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, PLAYER_ATTACK), add_to_log)
+				update_target_info_label(get_target_info_text(cursor_cell, PLAYER_ATTACK, "공격"))
+			else:
+				update_status("공격 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
+				update_target_info_label("공격 불가\n인접한 적만 선택할 수 있습니다.")
+		PHASE_SELECT_SKILL_TARGET:
+			if is_skill_target_cell(cursor_cell):
+				update_status("스킬 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, PLAYER_SKILL_DAMAGE), add_to_log)
+				update_target_info_label(get_target_info_text(cursor_cell, PLAYER_SKILL_DAMAGE, "스킬"))
+			else:
+				update_status("스킬 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
+				update_target_info_label("스킬 불가\n사거리 %d칸 안의 적만 선택할 수 있습니다." % PLAYER_SKILL_RANGE)
+
+
+func try_move_to_cell(cell: Vector2i) -> void:
+	if not is_valid_move_cell(cell):
+		if cell == player_cell:
+			update_status("이미 서 있는 칸입니다.")
+		elif is_cell_occupied(cell):
+			update_status("이미 점유된 칸입니다.")
+		else:
+			update_status("이동 범위를 벗어났습니다.")
+		return
+
+	player_cell = cell
+	cursor_cell = player_cell
+	has_moved = true
+	battle_phase = PHASE_CHOOSE_ACTION
+	update_units()
+	update_status("보스를 이동했습니다. 다음 행동을 선택하세요.")
+	update_action_menu()
+
+
+func try_attack_cell(cell: Vector2i) -> void:
+	var enemy_index := get_enemy_index_at_cell(cell)
+	if enemy_index == -1:
+		update_status("공격할 적을 선택하세요.")
+		return
+	if not is_attackable_enemy_cell(cell):
+		update_status("공격하려면 인접한 적을 선택해야 합니다.")
+		return
+
+	has_acted = true
+	player_attack(enemy_index)
+	if battle_phase == PHASE_SELECT_ATTACK_TARGET:
+		end_player_turn()
+
+
+func try_skill_cell(cell: Vector2i) -> void:
+	var enemy_index := get_enemy_index_at_cell(cell)
+	if enemy_index == -1:
+		update_status("스킬 대상을 선택하세요.")
+		return
+	if not is_skill_target_cell(cell):
+		update_status("스킬 사거리를 벗어난 대상입니다.")
+		return
+
+	has_acted = true
+	skill_used = true
+	player_skill(enemy_index)
+	if battle_phase == PHASE_SELECT_SKILL_TARGET:
+		end_player_turn()
+
+
+func cancel_action_selection() -> void:
+	if not is_player_control_phase():
+		return
+	if battle_phase == PHASE_CHOOSE_ACTION:
+		update_status("행동 메뉴에서 명령을 선택하세요.", false)
+		return
+
+	battle_phase = PHASE_CHOOSE_ACTION
+	cursor_cell = player_cell
+	update_status("선택을 취소했습니다. 행동을 다시 선택하세요.")
+	refresh_highlights()
+	update_action_menu()
 
 
 func player_attack(enemy_index: int) -> void:
@@ -459,12 +803,40 @@ func player_attack(enemy_index: int) -> void:
 		resolve_victory()
 
 
+func player_skill(enemy_index: int) -> void:
+	var enemy: Dictionary = enemies[enemy_index]
+	var next_hp := int(enemy.get("hp", 0)) - PLAYER_SKILL_DAMAGE
+	enemy["hp"] = next_hp
+	if next_hp <= 0:
+		var defeated_label := String(enemy.get("label", "적"))
+		enemies.remove_at(enemy_index)
+		update_status("현장 명령으로 %s 제압." % defeated_label)
+	else:
+		update_status("현장 명령: %s에게 피해 %d." % [String(enemy.get("label", "적")), PLAYER_SKILL_DAMAGE])
+
+	update_units()
+	if enemies.is_empty():
+		resolve_victory()
+
+
+func start_player_turn(message: String) -> void:
+	battle_phase = PHASE_CHOOSE_ACTION
+	has_moved = false
+	has_acted = false
+	player_defending = false
+	cursor_cell = player_cell
+	update_units()
+	update_status(message)
+	update_action_menu()
+
+
 func end_player_turn() -> void:
-	if turn_state != "player":
+	if not is_player_control_phase():
 		return
 
-	turn_state = "enemy"
+	battle_phase = PHASE_ENEMY_TURN
 	update_hud()
+	update_action_menu()
 	refresh_highlights()
 	await get_tree().create_timer(0.25).timeout
 	run_enemy_turn()
@@ -475,8 +847,11 @@ func run_enemy_turn() -> void:
 	for enemy: Dictionary in enemies:
 		if get_cell_distance(enemy.get("cell", Vector2i.ZERO), player_cell) == 1:
 			var attack_power := int(enemy.get("attack", 1))
+			if player_defending:
+				attack_power = maxi(1, attack_power - 1)
 			player_hp -= attack_power
-			messages.append("%s: 보스에게 %d 피해" % [String(enemy.get("label", "적")), attack_power])
+			var defense_note := " (방어)" if player_defending else ""
+			messages.append("%s: 보스에게 %d 피해%s" % [String(enemy.get("label", "적")), attack_power, defense_note])
 		else:
 			var before_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
 			var next_cell := get_enemy_step_toward_player(enemy)
@@ -491,7 +866,7 @@ func run_enemy_turn() -> void:
 
 	if player_hp <= 0:
 		player_hp = 0
-		turn_state = "lost"
+		battle_phase = PHASE_DEFEAT
 		update_units()
 		return_button.text = "현장 복귀"
 		return_button.disabled = false
@@ -500,12 +875,251 @@ func run_enemy_turn() -> void:
 		result_label.text = "전투 실패: 보너스 미적용"
 		result_label.add_theme_color_override("font_color", COLOR_WARNING)
 		update_status("전투 실패")
-		prompt_label.text = "퇴각 또는 재시도"
+		update_action_menu()
 		return
 
-	turn_state = "player"
-	update_units()
-	update_status("적 행동: %s" % " / ".join(messages))
+	player_defending = false
+	start_player_turn("적 행동: %s" % " / ".join(messages))
+
+
+func is_player_control_phase() -> bool:
+	return battle_phase in [
+		PHASE_CHOOSE_ACTION,
+		PHASE_SELECT_MOVE_TILE,
+		PHASE_SELECT_ATTACK_TARGET,
+		PHASE_SELECT_SKILL_TARGET
+	]
+
+
+func is_valid_move_cell(cell: Vector2i) -> bool:
+	if not is_cell_inside(cell):
+		return false
+	if cell == player_cell:
+		return false
+	if is_cell_occupied(cell):
+		return false
+	return get_cell_distance(player_cell, cell) <= PLAYER_MOVE_RANGE
+
+
+func is_attackable_enemy_cell(cell: Vector2i) -> bool:
+	return get_enemy_index_at_cell(cell) != -1 and get_cell_distance(player_cell, cell) == 1
+
+
+func is_skill_target_cell(cell: Vector2i) -> bool:
+	return get_enemy_index_at_cell(cell) != -1 and get_cell_distance(player_cell, cell) <= PLAYER_SKILL_RANGE
+
+
+func has_adjacent_enemy() -> bool:
+	for enemy: Dictionary in enemies:
+		if get_cell_distance(player_cell, enemy.get("cell", Vector2i.ZERO)) == 1:
+			return true
+	return false
+
+
+func has_skill_target() -> bool:
+	for enemy: Dictionary in enemies:
+		if get_cell_distance(player_cell, enemy.get("cell", Vector2i.ZERO)) <= PLAYER_SKILL_RANGE:
+			return true
+	return false
+
+
+func get_first_move_target_cell() -> Vector2i:
+	var preferred_offsets: Array[Vector2i] = [
+		Vector2i.RIGHT,
+		Vector2i.DOWN,
+		Vector2i.UP,
+		Vector2i.LEFT,
+		Vector2i(2, 0),
+		Vector2i(0, 2),
+		Vector2i(0, -2),
+		Vector2i(-2, 0),
+		Vector2i(1, 1),
+		Vector2i(1, -1),
+		Vector2i(-1, 1),
+		Vector2i(-1, -1)
+	]
+	for offset: Vector2i in preferred_offsets:
+		var candidate := player_cell + offset
+		if is_valid_move_cell(candidate):
+			return candidate
+	return player_cell
+
+
+func get_first_attack_target_cell() -> Vector2i:
+	for enemy: Dictionary in enemies:
+		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+		if is_attackable_enemy_cell(enemy_cell):
+			return enemy_cell
+	return player_cell
+
+
+func get_first_skill_target_cell() -> Vector2i:
+	for enemy: Dictionary in enemies:
+		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+		if is_skill_target_cell(enemy_cell):
+			return enemy_cell
+	return player_cell
+
+
+func get_attack_target_cells() -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	for enemy: Dictionary in enemies:
+		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+		if is_attackable_enemy_cell(enemy_cell):
+			targets.append(enemy_cell)
+	return targets
+
+
+func get_skill_target_cells() -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	for enemy: Dictionary in enemies:
+		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+		if is_skill_target_cell(enemy_cell):
+			targets.append(enemy_cell)
+	return targets
+
+
+func get_current_target_cells() -> Array[Vector2i]:
+	if battle_phase == PHASE_SELECT_ATTACK_TARGET:
+		return get_attack_target_cells()
+	if battle_phase == PHASE_SELECT_SKILL_TARGET:
+		return get_skill_target_cells()
+	var targets: Array[Vector2i] = []
+	return targets
+
+
+func cycle_target_cursor(offset: Vector2i) -> void:
+	var targets := get_current_target_cells()
+	if targets.is_empty():
+		update_cursor_status(false)
+		return
+
+	var direction := 1
+	if offset.x < 0 or offset.y < 0:
+		direction = -1
+
+	var current_index := get_target_index(cursor_cell, targets)
+	if current_index == -1:
+		current_index = 0
+	else:
+		current_index = wrapi(current_index + direction, 0, targets.size())
+
+	cursor_cell = targets[current_index]
+	refresh_highlights()
+	update_cursor_status(false)
+
+
+func get_target_index(cell: Vector2i, targets: Array[Vector2i]) -> int:
+	for index in range(targets.size()):
+		if targets[index] == cell:
+			return index
+	return -1
+
+
+func get_target_status_text(cell: Vector2i, damage: int) -> String:
+	var enemy_index := get_enemy_index_at_cell(cell)
+	if enemy_index == -1:
+		return format_cell(cell)
+	var enemy: Dictionary = enemies[enemy_index]
+	var enemy_label := String(enemy.get("label", "적"))
+	var hp := int(enemy.get("hp", 0))
+	var next_hp := maxi(0, hp - damage)
+	return "%s HP %d->%d" % [enemy_label, hp, next_hp]
+
+
+func get_target_info_text(cell: Vector2i, damage: int, action_name: String) -> String:
+	var enemy_index := get_enemy_index_at_cell(cell)
+	if enemy_index == -1:
+		return "대상 정보 없음"
+	var enemy: Dictionary = enemies[enemy_index]
+	var hp := int(enemy.get("hp", 0))
+	var max_hp := int(enemy.get("max_hp", 1))
+	var next_hp := maxi(0, hp - damage)
+	return "%s 대상\n%s HP %d/%d -> %d | 피해 %d" % [
+		action_name,
+		String(enemy.get("label", "적")),
+		hp,
+		max_hp,
+		next_hp,
+		damage
+	]
+
+
+func update_target_info_label(text: String) -> void:
+	if target_info_label != null:
+		target_info_label.text = text
+
+
+func update_action_menu() -> void:
+	if move_button == null:
+		return
+
+	var can_choose := is_player_control_phase()
+	move_button.disabled = not can_choose or has_moved
+	attack_button.disabled = not can_choose or has_acted
+	defend_button.disabled = not can_choose or has_acted
+	skill_button.disabled = not can_choose or has_acted or skill_used
+	flee_button.disabled = not can_choose
+	wait_button.disabled = not can_choose
+
+	move_button.text = "이동 선택 중" if battle_phase == PHASE_SELECT_MOVE_TILE else "이동"
+	attack_button.text = "공격 선택 중" if battle_phase == PHASE_SELECT_ATTACK_TARGET else "공격"
+	skill_button.text = "스킬 선택 중" if battle_phase == PHASE_SELECT_SKILL_TARGET else "스킬"
+	defend_button.text = "방어"
+	flee_button.text = "철수"
+	wait_button.text = "대기"
+
+	match battle_phase:
+		PHASE_CHOOSE_ACTION:
+			action_detail_label.text = "명령을 선택하세요. 이동 후에도 행동을 한 번 더 고를 수 있습니다."
+			if has_adjacent_enemy():
+				update_target_info_label("공격 가능\n인접한 적이 있습니다.")
+			elif has_skill_target() and not skill_used:
+				update_target_info_label("스킬 가능\n사거리 %d칸 안의 적이 있습니다." % PLAYER_SKILL_RANGE)
+			else:
+				update_target_info_label("대상 정보 없음\n공격은 인접, 스킬은 %d칸 사거리입니다." % PLAYER_SKILL_RANGE)
+			prompt_label.text = "아군 턴: 행동 선택"
+		PHASE_SELECT_MOVE_TILE:
+			action_detail_label.text = "파란 칸을 클릭하거나 WASD로 커서 이동 후 Enter/Space로 확정."
+			update_target_info_label("이동 선택 중\n파란 칸만 이동할 수 있습니다.")
+			prompt_label.text = "아군 턴: 이동 칸 선택"
+		PHASE_SELECT_ATTACK_TARGET:
+			action_detail_label.text = "빨간 적 대상 중 WASD로 전환, Enter/Space로 확정."
+			prompt_label.text = "아군 턴: 공격 대상 선택"
+		PHASE_SELECT_SKILL_TARGET:
+			action_detail_label.text = "청록 적 대상 중 WASD로 전환, Enter/Space로 확정. 전투당 1회."
+			prompt_label.text = "아군 턴: 스킬 대상 선택"
+		PHASE_ENEMY_TURN:
+			action_detail_label.text = "적이 행동 중입니다."
+			update_target_info_label("대상 정보 없음")
+			prompt_label.text = "적 턴"
+		PHASE_VICTORY:
+			action_detail_label.text = "전투 승리. 현장 복귀가 가능합니다."
+			update_target_info_label("전투 종료\n목표 해결")
+			prompt_label.text = "전투 종료"
+		PHASE_DEFEAT:
+			action_detail_label.text = "전투 실패. 현장 복귀 또는 재시도를 선택하세요."
+			update_target_info_label("전투 실패\n재시도 또는 현장 복귀")
+			prompt_label.text = "퇴각 또는 재시도"
+
+
+func get_phase_label() -> String:
+	match battle_phase:
+		PHASE_CHOOSE_ACTION:
+			return "아군 턴: 행동 선택"
+		PHASE_SELECT_MOVE_TILE:
+			return "아군 턴: 이동 선택"
+		PHASE_SELECT_ATTACK_TARGET:
+			return "아군 턴: 공격 선택"
+		PHASE_SELECT_SKILL_TARGET:
+			return "아군 턴: 스킬 선택"
+		PHASE_ENEMY_TURN:
+			return "적 턴"
+		PHASE_VICTORY:
+			return "승리"
+		PHASE_DEFEAT:
+			return "패배"
+	return "전투"
 
 
 func get_enemy_step_toward_player(enemy: Dictionary) -> Vector2i:
@@ -538,7 +1152,7 @@ func is_cell_blocked_for_enemy(cell: Vector2i, moving_enemy_id: String) -> bool:
 
 
 func resolve_victory() -> void:
-	turn_state = "won"
+	battle_phase = PHASE_VICTORY
 	var report := "%s 해결: 방해 세력을 제압했습니다." % String(combat_event.get("title", "현장 전투"))
 	GameState.set_field_battle_resolved(report)
 	refresh_highlights()
@@ -548,15 +1162,19 @@ func resolve_victory() -> void:
 	return_button.disabled = false
 	result_label.text = "%s 적용" % get_battle_bonus_text()
 	result_label.add_theme_color_override("font_color", COLOR_SUCCESS)
-	prompt_label.text = "전투 종료"
 	update_status("%s | %s" % [report, get_battle_bonus_text()])
+	update_action_menu()
 	update_hud()
 
 
 func restart_battle() -> void:
 	player_cell = Vector2i(0, 2)
 	player_hp = PLAYER_MAX_HP
-	turn_state = "player"
+	battle_phase = PHASE_CHOOSE_ACTION
+	has_moved = false
+	has_acted = false
+	player_defending = false
+	skill_used = false
 	action_log.clear()
 	setup_enemies()
 	return_button.text = "현장 복귀"
@@ -566,8 +1184,7 @@ func restart_battle() -> void:
 	result_label.text = get_battle_bonus_text()
 	result_label.add_theme_color_override("font_color", COLOR_MUTED)
 	update_units()
-	prompt_label.text = "아군 행동"
-	update_status("전투 재시작.")
+	start_player_turn("전투 재시작. 행동을 선택하세요.")
 
 
 func return_to_dungeon() -> void:
@@ -595,14 +1212,7 @@ func update_hud() -> void:
 		return
 
 	var enemy_count := enemies.size()
-	var turn_text := "아군 턴"
-	if turn_state == "enemy":
-		turn_text = "적 턴"
-	elif turn_state == "won":
-		turn_text = "승리"
-	elif turn_state == "lost":
-		turn_text = "패배"
-
+	var turn_text := get_phase_label()
 	hp_label.text = "보스 HP %d/%d | 적 %d | %s" % [player_hp, PLAYER_MAX_HP, enemy_count, turn_text]
 
 
@@ -620,6 +1230,18 @@ func cell_to_position(cell: Vector2i) -> Vector2:
 func point_to_cell(point: Vector2) -> Vector2i:
 	var local := point - BOARD_ORIGIN
 	return Vector2i(floori(local.x / CELL_SIZE), floori(local.y / CELL_SIZE))
+
+
+func board_local_to_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori(point.x / CELL_SIZE), floori(point.y / CELL_SIZE))
+
+
+func clamp_cell_to_board(cell: Vector2i) -> Vector2i:
+	return Vector2i(clampi(cell.x, 0, GRID_WIDTH - 1), clampi(cell.y, 0, GRID_HEIGHT - 1))
+
+
+func format_cell(cell: Vector2i) -> String:
+	return "(%d,%d)" % [cell.x + 1, cell.y + 1]
 
 
 func is_cell_inside(cell: Vector2i) -> bool:
