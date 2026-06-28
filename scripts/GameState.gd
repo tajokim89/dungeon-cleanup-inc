@@ -157,6 +157,8 @@ var last_report: String = ""
 var selected_contract_id: String = ""
 var field_completed_task_ids: Array[String] = []
 var field_battle_resolved: bool = false
+var field_player_position: Vector2 = Vector2.ZERO
+var has_field_player_position: bool = false
 var last_battle_report: String = ""
 
 
@@ -313,9 +315,23 @@ func set_field_battle_resolved(report: String) -> void:
 	changed.emit()
 
 
+func set_field_player_position(position: Vector2) -> void:
+	field_player_position = position
+	has_field_player_position = true
+	changed.emit()
+
+
+func get_field_player_position(default_position: Vector2) -> Vector2:
+	if has_field_player_position:
+		return field_player_position
+	return default_position
+
+
 func clear_field_operation_state() -> void:
 	field_completed_task_ids.clear()
 	field_battle_resolved = false
+	field_player_position = Vector2.ZERO
+	has_field_player_position = false
 	last_battle_report = ""
 
 

@@ -3,6 +3,7 @@ extends Node2D
 const BossTexture = preload("res://assets/sprites/boss_placeholder.svg")
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
 const BATTLE_TEST_SCENE_PATH: String = "res://scenes/BattleTest.tscn"
+const PLAYER_START_POSITION: Vector2 = Vector2(230, 520)
 
 const COLOR_BACKGROUND: Color = Color(0.047, 0.052, 0.061)
 const COLOR_FLOOR: Color = Color(0.102, 0.118, 0.102)
@@ -108,7 +109,7 @@ func create_tasks() -> void:
 func create_player() -> void:
 	player = PlayerController.new()
 	player.name = "Player"
-	player.position = Vector2(230, 520)
+	player.position = GameState.get_field_player_position(PLAYER_START_POSITION)
 
 	var sprite := Sprite2D.new()
 	sprite.name = "BossSprite"
@@ -480,6 +481,7 @@ func return_to_office() -> void:
 
 
 func go_to_battle() -> void:
+	GameState.set_field_player_position(player.position)
 	get_tree().change_scene_to_file(BATTLE_TEST_SCENE_PATH)
 
 
