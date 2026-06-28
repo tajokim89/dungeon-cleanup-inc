@@ -1,5 +1,9 @@
 extends Node2D
 
+const PlayerBattleTexture = preload("res://assets/sprites/pixellab/주인공/rotations/south.png")
+const ExplorerHoldoutTexture = preload("res://assets/sprites/enemies/explorer_holdout.svg")
+const HiredInspectorTexture = preload("res://assets/sprites/enemies/hired_inspector.svg")
+
 const DUNGEON_TEST_SCENE_PATH: String = "res://scenes/DungeonTest.tscn"
 const BOARD_ORIGIN: Vector2 = Vector2(407, 142)
 const GRID_WIDTH: int = 6
@@ -8,6 +12,7 @@ const CELL_SIZE: float = 68.0
 const PLAYER_MAX_HP: int = 12
 const PLAYER_ATTACK: int = 3
 const PLAYER_MOVE_RANGE: int = 2
+const UNIT_SPRITE_SCALE: Vector2 = Vector2(0.66, 0.66)
 
 const COLOR_BACKGROUND: Color = Color(0.05, 0.052, 0.061)
 const COLOR_TILE_A: Color = Color(0.11, 0.119, 0.137)
@@ -71,14 +76,18 @@ func setup_enemies() -> void:
 			"label": "탐사대 잔당",
 			"cell": Vector2i(4, 1),
 			"hp": 4,
-			"attack": 2
+			"max_hp": 4,
+			"attack": 2,
+			"texture": ExplorerHoldoutTexture
 		},
 		{
 			"id": "holdout_b",
 			"label": "고용 검문관",
 			"cell": Vector2i(5, 4),
 			"hp": 5,
-			"attack": 2
+			"max_hp": 5,
+			"attack": 2,
+			"texture": HiredInspectorTexture
 		}
 	]
 
@@ -224,34 +233,84 @@ func update_units() -> void:
 	for child in unit_layer.get_children():
 		child.queue_free()
 
-	create_unit_marker("PlayerUnit", player_cell, COLOR_PLAYER, "사장\nHP %d" % player_hp)
+	create_unit_marker("PlayerUnit", player_cell, PlayerBattleTexture, "사장", player_hp, PLAYER_MAX_HP, COLOR_PLAYER)
 	for enemy: Dictionary in enemies:
+		var enemy_texture: Texture2D = enemy.get("texture", ExplorerHoldoutTexture)
 		create_unit_marker(
 			String(enemy.get("id", "Enemy")),
 			enemy.get("cell", Vector2i.ZERO),
-			COLOR_ENEMY,
-			"%s\nHP %d" % [String(enemy.get("label", "적")), int(enemy.get("hp", 0))]
+			enemy_texture,
+			String(enemy.get("label", "적")),
+			int(enemy.get("hp", 0)),
+			int(enemy.get("max_hp", 1)),
+			COLOR_ENEMY
 		)
 
 	update_hud()
 	refresh_highlights()
 
 
-func create_unit_marker(node_name: String, cell: Vector2i, color: Color, text: String) -> void:
-	var marker := PanelContainer.new()
+func create_unit_marker(
+	node_name: String,
+	cell: Vector2i,
+	texture: Texture2D,
+	unit_label: String,
+	hp: int,
+	max_hp: int,
+	hp_color: Color
+) -> void:
+	var marker := Node2D.new()
 	marker.name = node_name
-	marker.position = cell_to_position(cell) + Vector2(7.0, 7.0)
-	marker.size = Vector2(CELL_SIZE - 14.0, CELL_SIZE - 14.0)
-	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	marker.add_theme_stylebox_override("panel", make_panel_style(color, Color.WHITE, 1))
+	marker.position = cell_to_position(cell)
 	unit_layer.add_child(marker)
 
-	var label := make_label(text, 13, Color.WHITE)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	marker.add_child(label)
+	var name_label := make_label(unit_label, 10, COLOR_TEXT)
+	name_label.position = Vector2(0.0, -13.0)
+	name_label.size = Vector2(CELL_SIZE, 14.0)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_child(name_label)
+
+	var shadow := ColorRect.new()
+	shadow.name = "Shadow"
+	shadow.position = Vector2(15.0, 51.0)
+	shadow.size = Vector2(38.0, 7.0)
+	shadow.color = Color(0.0, 0.0, 0.0, 0.35)
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_child(shadow)
+
+	var sprite := Sprite2D.new()
+	sprite.name = "Sprite"
+	sprite.texture = texture
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(CELL_SIZE * 0.5, CELL_SIZE * 0.43)
+	sprite.scale = UNIT_SPRITE_SCALE
+	marker.add_child(sprite)
+
+	var hp_track := ColorRect.new()
+	hp_track.name = "HpTrack"
+	hp_track.position = Vector2(8.0, 58.0)
+	hp_track.size = Vector2(52.0, 6.0)
+	hp_track.color = COLOR_PANEL_DARK
+	hp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_child(hp_track)
+
+	var hp_fill := ColorRect.new()
+	hp_fill.name = "HpFill"
+	hp_fill.position = hp_track.position
+	var hp_ratio := clampf(float(hp) / float(maxi(max_hp, 1)), 0.0, 1.0)
+	hp_fill.size = Vector2(52.0 * hp_ratio, 6.0)
+	hp_fill.color = hp_color
+	hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_child(hp_fill)
+
+	var hp_label := make_label("%d/%d" % [hp, max_hp], 9, Color.WHITE)
+	hp_label.position = Vector2(8.0, 55.0)
+	hp_label.size = Vector2(52.0, 12.0)
+	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_child(hp_label)
 
 
 func refresh_highlights() -> void:
@@ -344,6 +403,10 @@ func handle_player_key(keycode: Key) -> void:
 
 
 func handle_player_cell_action(cell: Vector2i) -> void:
+	if not is_cell_inside(cell):
+		update_status("전투 구역 밖으로는 이동할 수 없습니다.")
+		return
+
 	var enemy_index := get_enemy_index_at_cell(cell)
 	if enemy_index != -1:
 		if get_cell_distance(player_cell, cell) == 1:
