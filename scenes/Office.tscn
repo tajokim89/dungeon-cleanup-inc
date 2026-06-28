@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bblrqcwouvknq"]
+
+[ext_resource type="Script" path="res://scripts/Office.gd" id="1_office"]
+
+[node name="Office" type="Node2D"]
+script = ExtResource("1_office")

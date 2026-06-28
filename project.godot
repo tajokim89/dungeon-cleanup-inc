@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="dungeon-cleanup-inc"
-run/main_scene="uid://bixrsiw04xatj"
+run/main_scene="res://scenes/Office.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://scripts/GameState.gd"
 
 [display]
 
