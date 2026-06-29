@@ -57,6 +57,7 @@ var board_layer: Node2D
 var highlight_layer: Node2D
 var unit_layer: Node2D
 var title_label: Label
+var objective_label: Label
 var hp_label: Label
 var result_label: Label
 var status_label: Label
@@ -206,6 +207,10 @@ func create_ui() -> void:
 
 	var subtitle := make_label(String(current_contract.get("title", "계약 현장")), 12, COLOR_MUTED)
 	title_box.add_child(subtitle)
+
+	objective_label = make_label("목표: %s" % get_objective_text(), 13, COLOR_SUCCESS)
+	objective_label.custom_minimum_size = Vector2(0.0, 22.0)
+	title_box.add_child(objective_label)
 
 	retry_button = Button.new()
 	retry_button.text = "재시도"
@@ -867,14 +872,15 @@ func run_enemy_turn() -> void:
 	if player_hp <= 0:
 		player_hp = 0
 		battle_phase = PHASE_DEFEAT
+		var failed_objective := get_objective_text()
 		update_units()
 		return_button.text = "현장 복귀"
 		return_button.disabled = false
 		retry_button.visible = true
 		retry_button.disabled = false
-		result_label.text = "전투 실패: 보너스 미적용"
+		result_label.text = "목표 실패: %s | 보너스 미적용" % failed_objective
 		result_label.add_theme_color_override("font_color", COLOR_WARNING)
-		update_status("전투 실패")
+		update_status("전투 실패: %s" % failed_objective)
 		update_action_menu()
 		return
 
@@ -1153,7 +1159,8 @@ func is_cell_blocked_for_enemy(cell: Vector2i, moving_enemy_id: String) -> bool:
 
 func resolve_victory() -> void:
 	battle_phase = PHASE_VICTORY
-	var report := "%s 해결: 방해 세력을 제압했습니다." % String(combat_event.get("title", "현장 전투"))
+	var objective := get_objective_text()
+	var report := "%s 해결: %s" % [String(combat_event.get("title", "현장 전투")), objective]
 	GameState.set_field_battle_resolved(report)
 	refresh_highlights()
 	retry_button.visible = false
@@ -1221,6 +1228,13 @@ func get_battle_bonus_text() -> String:
 	if bonus.is_empty():
 		return "전투 보너스 없음"
 	return "전투 보너스: %s" % GameState.format_reward_text(bonus)
+
+
+func get_objective_text() -> String:
+	var objective := String(combat_event.get("objective", "")).strip_edges()
+	if objective.is_empty():
+		return "방해 세력을 제압하고 현장 작업을 재개하라"
+	return objective
 
 
 func cell_to_position(cell: Vector2i) -> Vector2:

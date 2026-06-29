@@ -52,6 +52,7 @@ const FIELD_CONTRACTS: Array[Dictionary] = [
 		"combat_event": {
 			"id": "sewer_holdout",
 			"title": "하수 던전 잔당 진압",
+			"objective": "탐사대 잔당을 제압하고 청소 작업을 재개하라",
 			"label": "소란스러운 잔당",
 			"action": "청소 작업을 방해하는 탐사대 잔당과 교전합니다.",
 			"position": Vector2(760, 465),
