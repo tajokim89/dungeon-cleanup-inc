@@ -1,5 +1,6 @@
 extends Node2D
 
+const UiAssetStyles = preload("res://scripts/UiAssetStyles.gd")
 const PlayerBattleTexture = preload("res://assets/sprites/pixellab/주인공/rotations/south.png")
 const ExplorerHoldoutTexture = preload("res://assets/sprites/enemies/explorer_holdout.svg")
 const HiredInspectorTexture = preload("res://assets/sprites/enemies/hired_inspector.svg")
@@ -292,14 +293,16 @@ func create_ui() -> void:
 	retry_button.text = "재시도"
 	retry_button.visible = false
 	retry_button.disabled = true
-	retry_button.custom_minimum_size = Vector2(86.0, 34.0)
+	retry_button.custom_minimum_size = Vector2(104.0, 38.0)
+	UiAssetStyles.apply_plate_button_style(retry_button)
 	retry_button.pressed.connect(restart_battle)
 	header.add_child(retry_button)
 
 	return_button = Button.new()
 	return_button.text = "현장 복귀"
 	return_button.disabled = true
-	return_button.custom_minimum_size = Vector2(110.0, 34.0)
+	return_button.custom_minimum_size = Vector2(126.0, 38.0)
+	UiAssetStyles.apply_plate_button_style(return_button)
 	return_button.pressed.connect(return_to_dungeon)
 	header.add_child(return_button)
 
@@ -400,7 +403,8 @@ func make_action_button(text: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.focus_mode = Control.FOCUS_NONE
-	button.custom_minimum_size = Vector2(158.0, 38.0)
+	button.custom_minimum_size = Vector2(158.0, 42.0)
+	UiAssetStyles.apply_plate_button_style(button)
 	button.pressed.connect(callback)
 	return button
 
@@ -1396,7 +1400,7 @@ func get_action_display_label(action_index: int) -> String:
 		label = "지원 선택 중"
 
 	if battle_phase == PHASE_CHOOSE_ACTION and action_index == selected_action_index:
-		return "> %s" % label
+		return label
 	return label
 
 
@@ -1488,6 +1492,18 @@ func update_choose_action_info() -> void:
 			update_target_info_label("대기\n행동을 마치고 다음 아군으로 넘깁니다.")
 
 
+func is_action_button_active(action_index: int) -> bool:
+	if battle_phase == PHASE_CHOOSE_ACTION:
+		return action_index == selected_action_index
+	if battle_phase == PHASE_SELECT_MOVE_TILE:
+		return action_index == ACTION_MOVE
+	if battle_phase == PHASE_SELECT_ATTACK_TARGET:
+		return action_index == ACTION_ATTACK
+	if battle_phase == PHASE_SELECT_SKILL_TARGET:
+		return action_index == ACTION_SKILL
+	return false
+
+
 func update_action_menu() -> void:
 	if move_button == null:
 		return
@@ -1503,7 +1519,9 @@ func update_action_menu() -> void:
 	normalize_selected_action_index()
 	var buttons := get_action_buttons()
 	for action_index in range(buttons.size()):
-		buttons[action_index].text = get_action_display_label(action_index)
+		var button := buttons[action_index]
+		button.text = get_action_display_label(action_index)
+		UiAssetStyles.apply_plate_button_style(button, is_action_button_active(action_index))
 
 	match battle_phase:
 		PHASE_CHOOSE_ACTION:

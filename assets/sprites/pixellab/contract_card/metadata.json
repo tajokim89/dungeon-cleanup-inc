@@ -1,0 +1,40 @@
+{
+  "ui_assets": [
+    {
+      "id": "e02f933c-aed0-42bf-b24a-249ed2b84b0b",
+      "name": null,
+      "prompt": "Use the provided image as the style reference only. Create two large empty contract request card frames for a dark dungeon cleanup company management UI.\n\nThere are two separate wide rectangular card frames arranged vertically: normal and selected. Each card must be taller than a command button, with enough empty interior space for multiple lines of Korean text, small reward icons, risk icons, and status labels to be added later in Godot.\n\nKeep the same dark empty center, thin muted brass double border, clipped stepped pixel corners, and restrained premium black metal style as the reference image, but make the proportions clearly feel like a contract card or ledger entry, not a button.\n\nNormal: dark empty black center with thin muted brass frame.\nSelected: slightly stronger brass outline with a subtle restrained highlight.\n\nDo not add readable text, fake labels, numbers, icons, symbols, characters, logos, seals, stamps, paper texture, parchment, wood, leather, or background scene.\n\nTransparent background. Single crop-ready UI card frame sheet. Refined 16/32-bit pixel art. Grim bureaucratic contractor office atmosphere.\n",
+      "kind": "template",
+      "file": "Use_the_provided_image_as_the_style_reference_only/Use_the_provided_image_as_the_style_reference_only.png",
+      "size": {
+        "width": 512,
+        "height": 512
+      },
+      "group_id": "e02f933c-aed0-42bf-b24a-249ed2b84b0b"
+    },
+    {
+      "id": "5d92ede6-f1c5-41d8-8876-d572d7511f8e",
+      "name": "normal empty contract card",
+      "prompt": "Use the provided image as the style reference only. Create two large empty contract request card frames for a dark dungeon cleanup company management UI.\n\nThere are two separate wide rectangular card frames arranged vertically: normal and selected. Each card must be taller than a command button, with enough empty interior space for multiple lines of Korean text, small reward icons, risk icons, and status labels to be added later in Godot.\n\nKeep the same dark empty center, thin muted brass double border, clipped stepped pixel corners, and restrained premium black metal style as the reference image, but make the proportions clearly feel like a contract card or ledger entry, not a button.\n\nNormal: dark empty black center with thin muted brass frame.\nSelected: slightly stronger brass outline with a subtle restrained highlight.\n\nDo not add readable text, fake labels, numbers, icons, symbols, characters, logos, seals, stamps, paper texture, parchment, wood, leather, or background scene.\n\nTransparent background. Single crop-ready UI card frame sheet. Refined 16/32-bit pixel art. Grim bureaucratic contractor office atmosphere.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_style_reference_only/elements/normal_empty_contract_card.png",
+      "size": {
+        "width": 333,
+        "height": 195
+      },
+      "group_id": "e02f933c-aed0-42bf-b24a-249ed2b84b0b"
+    },
+    {
+      "id": "fb3855ce-400f-4f5d-a8a7-3c3d4560fc32",
+      "name": "selected empty contract card",
+      "prompt": "Use the provided image as the style reference only. Create two large empty contract request card frames for a dark dungeon cleanup company management UI.\n\nThere are two separate wide rectangular card frames arranged vertically: normal and selected. Each card must be taller than a command button, with enough empty interior space for multiple lines of Korean text, small reward icons, risk icons, and status labels to be added later in Godot.\n\nKeep the same dark empty center, thin muted brass double border, clipped stepped pixel corners, and restrained premium black metal style as the reference image, but make the proportions clearly feel like a contract card or ledger entry, not a button.\n\nNormal: dark empty black center with thin muted brass frame.\nSelected: slightly stronger brass outline with a subtle restrained highlight.\n\nDo not add readable text, fake labels, numbers, icons, symbols, characters, logos, seals, stamps, paper texture, parchment, wood, leather, or background scene.\n\nTransparent background. Single crop-ready UI card frame sheet. Refined 16/32-bit pixel art. Grim bureaucratic contractor office atmosphere.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_style_reference_only/elements/selected_empty_contract_card.png",
+      "size": {
+        "width": 336,
+        "height": 189
+      },
+      "group_id": "e02f933c-aed0-42bf-b24a-249ed2b84b0b"
+    }
+  ]
+}

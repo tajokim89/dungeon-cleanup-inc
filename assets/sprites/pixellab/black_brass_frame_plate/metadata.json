@@ -1,0 +1,64 @@
+{
+  "ui_assets": [
+    {
+      "id": "0f1ce1d1-627c-4ba4-b797-52d27e133147",
+      "name": null,
+      "prompt": "Use the provided image as the exact style and silhouette reference. Create a four-state UI button plate sheet for the same long black brass framed command plate.\n\nThere are four separate horizontal plates arranged vertically: normal, hover, pressed, and disabled. Keep all four plates the same long horizontal shape, same proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same overall silhouette.\n\nNormal: match the provided reference closely.\nHover: slightly brighter and cleaner brass edge with a very subtle pale gold highlight.\nPressed: slightly darker inset center, reduced top highlight, compressed lower edge.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach plate must remain blank with an almost black empty center so game text can be added later in Godot.\n\nDo not change the shape between states. Do not make them rounded or chunky. Do not add text, numbers, icons, symbols, characters, labels, or extra decoration.\n\nTransparent background. Single crop-ready UI state sheet. Refined 16/32-bit pixel art. Dark dungeon management interface, premium black metal panel, thin brass trim, restrained and clean.\n",
+      "kind": "template",
+      "file": "Use_the_provided_image_as_the_exact_style_and_silh/Use_the_provided_image_as_the_exact_style_and_silh.png",
+      "size": {
+        "width": 512,
+        "height": 512
+      },
+      "group_id": "0f1ce1d1-627c-4ba4-b797-52d27e133147"
+    },
+    {
+      "id": "d0e640b5-f8f6-4298-bbaf-b61b78b81a40",
+      "name": "normal black brass frame plate",
+      "prompt": "Use the provided image as the exact style and silhouette reference. Create a four-state UI button plate sheet for the same long black brass framed command plate.\n\nThere are four separate horizontal plates arranged vertically: normal, hover, pressed, and disabled. Keep all four plates the same long horizontal shape, same proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same overall silhouette.\n\nNormal: match the provided reference closely.\nHover: slightly brighter and cleaner brass edge with a very subtle pale gold highlight.\nPressed: slightly darker inset center, reduced top highlight, compressed lower edge.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach plate must remain blank with an almost black empty center so game text can be added later in Godot.\n\nDo not change the shape between states. Do not make them rounded or chunky. Do not add text, numbers, icons, symbols, characters, labels, or extra decoration.\n\nTransparent background. Single crop-ready UI state sheet. Refined 16/32-bit pixel art. Dark dungeon management interface, premium black metal panel, thin brass trim, restrained and clean.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_and_silh/elements/normal_black_brass_frame_plate.png",
+      "size": {
+        "width": 323,
+        "height": 83
+      },
+      "group_id": "0f1ce1d1-627c-4ba4-b797-52d27e133147"
+    },
+    {
+      "id": "589684da-9aea-43cb-8bd3-bf1efc39f3f8",
+      "name": "hover black brass frame plate",
+      "prompt": "Use the provided image as the exact style and silhouette reference. Create a four-state UI button plate sheet for the same long black brass framed command plate.\n\nThere are four separate horizontal plates arranged vertically: normal, hover, pressed, and disabled. Keep all four plates the same long horizontal shape, same proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same overall silhouette.\n\nNormal: match the provided reference closely.\nHover: slightly brighter and cleaner brass edge with a very subtle pale gold highlight.\nPressed: slightly darker inset center, reduced top highlight, compressed lower edge.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach plate must remain blank with an almost black empty center so game text can be added later in Godot.\n\nDo not change the shape between states. Do not make them rounded or chunky. Do not add text, numbers, icons, symbols, characters, labels, or extra decoration.\n\nTransparent background. Single crop-ready UI state sheet. Refined 16/32-bit pixel art. Dark dungeon management interface, premium black metal panel, thin brass trim, restrained and clean.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_and_silh/elements/hover_black_brass_frame_plate.png",
+      "size": {
+        "width": 324,
+        "height": 78
+      },
+      "group_id": "0f1ce1d1-627c-4ba4-b797-52d27e133147"
+    },
+    {
+      "id": "9034837b-96df-4850-b474-4940154399dd",
+      "name": "pressed black brass frame plate",
+      "prompt": "Use the provided image as the exact style and silhouette reference. Create a four-state UI button plate sheet for the same long black brass framed command plate.\n\nThere are four separate horizontal plates arranged vertically: normal, hover, pressed, and disabled. Keep all four plates the same long horizontal shape, same proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same overall silhouette.\n\nNormal: match the provided reference closely.\nHover: slightly brighter and cleaner brass edge with a very subtle pale gold highlight.\nPressed: slightly darker inset center, reduced top highlight, compressed lower edge.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach plate must remain blank with an almost black empty center so game text can be added later in Godot.\n\nDo not change the shape between states. Do not make them rounded or chunky. Do not add text, numbers, icons, symbols, characters, labels, or extra decoration.\n\nTransparent background. Single crop-ready UI state sheet. Refined 16/32-bit pixel art. Dark dungeon management interface, premium black metal panel, thin brass trim, restrained and clean.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_and_silh/elements/pressed_black_brass_frame_plate.png",
+      "size": {
+        "width": 326,
+        "height": 82
+      },
+      "group_id": "0f1ce1d1-627c-4ba4-b797-52d27e133147"
+    },
+    {
+      "id": "f957f2cc-0ae3-4f38-a958-e4e2ea5b1131",
+      "name": "disabled black brass frame plate",
+      "prompt": "Use the provided image as the exact style and silhouette reference. Create a four-state UI button plate sheet for the same long black brass framed command plate.\n\nThere are four separate horizontal plates arranged vertically: normal, hover, pressed, and disabled. Keep all four plates the same long horizontal shape, same proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same overall silhouette.\n\nNormal: match the provided reference closely.\nHover: slightly brighter and cleaner brass edge with a very subtle pale gold highlight.\nPressed: slightly darker inset center, reduced top highlight, compressed lower edge.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach plate must remain blank with an almost black empty center so game text can be added later in Godot.\n\nDo not change the shape between states. Do not make them rounded or chunky. Do not add text, numbers, icons, symbols, characters, labels, or extra decoration.\n\nTransparent background. Single crop-ready UI state sheet. Refined 16/32-bit pixel art. Dark dungeon management interface, premium black metal panel, thin brass trim, restrained and clean.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_and_silh/elements/disabled_black_brass_frame_plate.png",
+      "size": {
+        "width": 323,
+        "height": 78
+      },
+      "group_id": "0f1ce1d1-627c-4ba4-b797-52d27e133147"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 extends Node2D
 
+const UiAssetStyles = preload("res://scripts/UiAssetStyles.gd")
+
 const DUNGEON_TEST_SCENE_PATH: String = "res://scenes/DungeonTest.tscn"
 
 const COLOR_BACKGROUND: Color = Color(0.063, 0.063, 0.078)
@@ -41,6 +43,11 @@ var assignment_gear_count_label: Label
 var assignment_summary_label: Label
 var assignment_detail_label: Label
 var focused_assignment_index: int = 0
+var assignment_hover_panel: PanelContainer
+var assignment_hover_title_label: Label
+var assignment_hover_body_label: Label
+var hovered_assignment_type: String = ""
+var hovered_assignment_id: String = ""
 var settlement_panel: PanelContainer
 var settlement_title_label: Label
 var settlement_result_label: Label
@@ -288,10 +295,10 @@ func create_contract_board_panel(canvas: CanvasLayer) -> void:
 	contract_panel.anchor_top = 0.5
 	contract_panel.anchor_right = 0.5
 	contract_panel.anchor_bottom = 0.5
-	contract_panel.offset_left = -390
-	contract_panel.offset_top = -225
-	contract_panel.offset_right = 390
-	contract_panel.offset_bottom = 225
+	contract_panel.offset_left = -460
+	contract_panel.offset_top = -245
+	contract_panel.offset_right = 460
+	contract_panel.offset_bottom = 245
 	contract_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_GOLD, 2))
 	canvas.add_child(contract_panel)
 
@@ -324,7 +331,8 @@ func create_contract_board_panel(canvas: CanvasLayer) -> void:
 	var close_button := Button.new()
 	close_button.text = "닫기"
 	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.custom_minimum_size = Vector2(82.0, 34.0)
+	close_button.custom_minimum_size = Vector2(104.0, 38.0)
+	UiAssetStyles.apply_plate_button_style(close_button)
 	close_button.pressed.connect(close_contract_board)
 	header.add_child(close_button)
 
@@ -334,8 +342,8 @@ func create_contract_board_panel(canvas: CanvasLayer) -> void:
 	layout.add_child(body)
 
 	var list_box := VBoxContainer.new()
-	list_box.add_theme_constant_override("separation", 8)
-	list_box.custom_minimum_size = Vector2(285.0, 0.0)
+	list_box.add_theme_constant_override("separation", 10)
+	list_box.custom_minimum_size = Vector2(318.0, 0.0)
 	body.add_child(list_box)
 
 	for contract: Dictionary in GameState.get_field_contracts():
@@ -343,7 +351,9 @@ func create_contract_board_panel(canvas: CanvasLayer) -> void:
 		var button := Button.new()
 		button.text = String(contract.get("title", "의뢰"))
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(285.0, 48.0)
+		button.custom_minimum_size = Vector2(318.0, 96.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UiAssetStyles.apply_contract_card_style(button, false)
 		button.set_meta("contract_id", contract_id)
 		button.pressed.connect(_on_contract_button_pressed.bind(contract_id))
 		contract_buttons.append(button)
@@ -372,7 +382,8 @@ func create_contract_board_panel(canvas: CanvasLayer) -> void:
 	contract_dispatch_button = Button.new()
 	contract_dispatch_button.text = "출동"
 	contract_dispatch_button.focus_mode = Control.FOCUS_NONE
-	contract_dispatch_button.custom_minimum_size = Vector2(110.0, 36.0)
+	contract_dispatch_button.custom_minimum_size = Vector2(128.0, 40.0)
+	UiAssetStyles.apply_plate_button_style(contract_dispatch_button)
 	contract_dispatch_button.pressed.connect(go_to_dungeon)
 	action_row.add_child(contract_dispatch_button)
 
@@ -385,9 +396,9 @@ func create_assignment_panel(canvas: CanvasLayer) -> void:
 	assignment_panel.anchor_top = 0.5
 	assignment_panel.anchor_right = 0.5
 	assignment_panel.anchor_bottom = 0.5
-	assignment_panel.offset_left = -500
+	assignment_panel.offset_left = -535
 	assignment_panel.offset_top = -255
-	assignment_panel.offset_right = 500
+	assignment_panel.offset_right = 535
 	assignment_panel.offset_bottom = 245
 	assignment_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_REPUTATION, 2))
 	canvas.add_child(assignment_panel)
@@ -421,7 +432,8 @@ func create_assignment_panel(canvas: CanvasLayer) -> void:
 	var close_button := Button.new()
 	close_button.text = "닫기"
 	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.custom_minimum_size = Vector2(82.0, 34.0)
+	close_button.custom_minimum_size = Vector2(104.0, 38.0)
+	UiAssetStyles.apply_plate_button_style(close_button)
 	close_button.pressed.connect(close_assignment_panel)
 	header.add_child(close_button)
 
@@ -432,7 +444,7 @@ func create_assignment_panel(canvas: CanvasLayer) -> void:
 
 	var staff_column := VBoxContainer.new()
 	staff_column.add_theme_constant_override("separation", 6)
-	staff_column.custom_minimum_size = Vector2(245.0, 0.0)
+	staff_column.custom_minimum_size = Vector2(270.0, 0.0)
 	body.add_child(staff_column)
 
 	assignment_staff_count_label = make_label("", 15, COLOR_GOLD)
@@ -442,35 +454,51 @@ func create_assignment_panel(canvas: CanvasLayer) -> void:
 		var staff_id := String(member.get("id", ""))
 		var button := Button.new()
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(245.0, 58.0)
+		button.custom_minimum_size = Vector2(270.0, 52.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		apply_assignment_button_style(button, "staff", false)
 		button.set_meta("item_type", "staff")
 		button.set_meta("item_id", staff_id)
 		button.pressed.connect(_on_assignment_staff_pressed.bind(staff_id))
+		button.mouse_entered.connect(show_assignment_item_hover.bind("staff", staff_id))
+		button.mouse_exited.connect(clear_assignment_item_hover.bind("staff", staff_id))
 		assignment_buttons.append(button)
 		staff_column.add_child(button)
 
 	var gear_column := VBoxContainer.new()
 	gear_column.add_theme_constant_override("separation", 6)
-	gear_column.custom_minimum_size = Vector2(245.0, 0.0)
+	gear_column.custom_minimum_size = Vector2(270.0, 0.0)
 	body.add_child(gear_column)
 
 	assignment_gear_count_label = make_label("", 15, COLOR_GOLD)
 	gear_column.add_child(assignment_gear_count_label)
 
+	var gear_grid := GridContainer.new()
+	gear_grid.columns = 2
+	gear_grid.add_theme_constant_override("h_separation", 6)
+	gear_grid.add_theme_constant_override("v_separation", 6)
+	gear_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gear_column.add_child(gear_grid)
+
 	for item: Dictionary in GameState.get_gear_inventory():
 		var gear_id := String(item.get("id", ""))
 		var button := Button.new()
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(245.0, 50.0)
+		button.custom_minimum_size = Vector2(132.0, 104.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		apply_assignment_button_style(button, "gear", false)
 		button.set_meta("item_type", "gear")
 		button.set_meta("item_id", gear_id)
 		button.pressed.connect(_on_assignment_gear_pressed.bind(gear_id))
+		button.mouse_entered.connect(show_assignment_item_hover.bind("gear", gear_id))
+		button.mouse_exited.connect(clear_assignment_item_hover.bind("gear", gear_id))
 		assignment_buttons.append(button)
-		gear_column.add_child(button)
+		gear_grid.add_child(button)
 
 	var dispatch_button := Button.new()
 	dispatch_button.focus_mode = Control.FOCUS_NONE
-	dispatch_button.custom_minimum_size = Vector2(245.0, 42.0)
+	dispatch_button.custom_minimum_size = Vector2(270.0, 42.0)
+	UiAssetStyles.apply_plate_button_style(dispatch_button)
 	dispatch_button.set_meta("item_type", "dispatch")
 	dispatch_button.set_meta("item_id", "")
 	dispatch_button.pressed.connect(go_to_dungeon)
@@ -487,6 +515,42 @@ func create_assignment_panel(canvas: CanvasLayer) -> void:
 	assignment_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	assignment_detail_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail_box.add_child(assignment_detail_label)
+
+	create_assignment_hover_panel(canvas)
+
+
+func create_assignment_hover_panel(canvas: CanvasLayer) -> void:
+	assignment_hover_panel = PanelContainer.new()
+	assignment_hover_panel.name = "AssignmentHoverPanel"
+	assignment_hover_panel.visible = false
+	assignment_hover_panel.anchor_left = 0.5
+	assignment_hover_panel.anchor_top = 0.5
+	assignment_hover_panel.anchor_right = 0.5
+	assignment_hover_panel.anchor_bottom = 0.5
+	assignment_hover_panel.offset_left = -390
+	assignment_hover_panel.offset_top = 250
+	assignment_hover_panel.offset_right = 390
+	assignment_hover_panel.offset_bottom = 342
+	assignment_hover_panel.z_index = 20
+	assignment_hover_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL_DARK, COLOR_GOLD, 2))
+	canvas.add_child(assignment_hover_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	assignment_hover_panel.add_child(margin)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 4)
+	margin.add_child(layout)
+
+	assignment_hover_title_label = make_label("", 14, COLOR_GOLD)
+	layout.add_child(assignment_hover_title_label)
+
+	assignment_hover_body_label = make_label("", 13, COLOR_TEXT)
+	layout.add_child(assignment_hover_body_label)
 
 
 func create_settlement_report_panel(canvas: CanvasLayer) -> void:
@@ -533,7 +597,8 @@ func create_settlement_report_panel(canvas: CanvasLayer) -> void:
 	var close_button := Button.new()
 	close_button.text = "닫기"
 	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.custom_minimum_size = Vector2(82.0, 34.0)
+	close_button.custom_minimum_size = Vector2(104.0, 38.0)
+	UiAssetStyles.apply_plate_button_style(close_button)
 	close_button.pressed.connect(close_settlement_report)
 	header.add_child(close_button)
 
@@ -572,7 +637,8 @@ func create_settlement_report_panel(canvas: CanvasLayer) -> void:
 	settlement_next_day_button = Button.new()
 	settlement_next_day_button.text = "다음 날"
 	settlement_next_day_button.focus_mode = Control.FOCUS_NONE
-	settlement_next_day_button.custom_minimum_size = Vector2(110.0, 36.0)
+	settlement_next_day_button.custom_minimum_size = Vector2(128.0, 40.0)
+	UiAssetStyles.apply_plate_button_style(settlement_next_day_button)
 	settlement_next_day_button.pressed.connect(_on_next_day_pressed)
 	action_row.add_child(settlement_next_day_button)
 
@@ -662,6 +728,107 @@ func make_panel_style(bg_color: Color, border_color: Color, border_width: int) -
 	return style
 
 
+func apply_assignment_button_style(button: Button, item_type: String, active: bool) -> void:
+	if item_type == "gear":
+		UiAssetStyles.apply_slot_button_style(button, active)
+	else:
+		UiAssetStyles.apply_plate_button_style(button, active)
+
+
+func get_staff_slot_text(member: Dictionary) -> String:
+	var status_text := "부상" if bool(member.get("injured", false)) else "체력 %d" % int(member.get("stamina", 0))
+	return "%s\n%s" % [
+		String(member.get("name", "직원")),
+		status_text
+	]
+
+
+func get_gear_slot_text(item: Dictionary) -> String:
+	var name := String(item.get("name", "장비"))
+	var parts := name.split(" ", false)
+	var display_name := name if parts.size() <= 1 else "\n".join(parts)
+	return "%s\n%dG" % [
+		display_name,
+		int(item.get("cost", 0))
+	]
+
+
+func show_assignment_item_hover(item_type: String, item_id: String) -> void:
+	hovered_assignment_type = item_type
+	hovered_assignment_id = item_id
+	update_assignment_hover_panel()
+
+
+func clear_assignment_item_hover(item_type: String, item_id: String) -> void:
+	if hovered_assignment_type != item_type or hovered_assignment_id != item_id:
+		return
+
+	hovered_assignment_type = ""
+	hovered_assignment_id = ""
+	update_assignment_hover_panel()
+
+
+func update_assignment_hover_panel() -> void:
+	if assignment_hover_panel == null:
+		return
+	if assignment_panel == null or not assignment_panel.visible:
+		assignment_hover_panel.visible = false
+		return
+
+	var item_type := hovered_assignment_type
+	var item_id := hovered_assignment_id
+	if item_type.is_empty():
+		var focused_button := get_focused_assignment_button()
+		if focused_button != null:
+			item_type = String(focused_button.get_meta("item_type", ""))
+			item_id = String(focused_button.get_meta("item_id", ""))
+
+	if item_id.is_empty():
+		assignment_hover_panel.visible = false
+		return
+
+	match item_type:
+		"staff":
+			var member := GameState.get_staff_by_id(item_id)
+			if member.is_empty():
+				assignment_hover_panel.visible = false
+				return
+
+			var selected_text := " | 선택됨" if GameState.is_staff_selected(item_id) else ""
+			var injury_text := " | 부상" if bool(member.get("injured", false)) else ""
+			assignment_hover_title_label.text = "%s | %s | 체력 %d%s%s" % [
+				String(member.get("name", item_id)),
+				String(member.get("species", "")),
+				int(member.get("stamina", 0)),
+				selected_text,
+				injury_text
+			]
+			assignment_hover_body_label.text = "%s\n능력: 청소 %d / 오염 %d / 운반 %d / 함정 %d" % [
+				String(member.get("role", "")),
+				int(member.get("cleanup", 0)),
+				int(member.get("pollution", 0)),
+				int(member.get("hauling", 0)),
+				int(member.get("trap", 0))
+			]
+			assignment_hover_panel.visible = true
+		"gear":
+			var item := GameState.get_gear_by_id(item_id)
+			if item.is_empty():
+				assignment_hover_panel.visible = false
+				return
+
+			var selected_text := " | 선택됨" if GameState.is_gear_selected(item_id) else ""
+			assignment_hover_title_label.text = "%s | 비용 %dG%s" % [
+				String(item.get("name", item_id)),
+				int(item.get("cost", 0)),
+				selected_text
+			]
+			assignment_hover_body_label.text = "효과: %s" % GameState.get_gear_effect_text(item)
+			assignment_hover_panel.visible = true
+		_:
+			assignment_hover_panel.visible = false
+
+
 func create_stat_chip(parent: HBoxContainer, caption: String, accent_color: Color, width: float) -> Label:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(width, 48.0)
@@ -731,12 +898,17 @@ func open_assignment_panel() -> void:
 	sync_assignment_focus()
 	refresh_assignment_panel()
 	assignment_panel.visible = true
+	update_assignment_hover_panel()
 	sync_player_control_with_modals()
 
 
 func close_assignment_panel() -> void:
 	if assignment_panel != null:
 		assignment_panel.visible = false
+	if assignment_hover_panel != null:
+		assignment_hover_panel.visible = false
+	hovered_assignment_type = ""
+	hovered_assignment_id = ""
 
 	sync_player_control_with_modals()
 
@@ -909,12 +1081,17 @@ func refresh_contract_board() -> void:
 		var button := contract_buttons[index]
 		var contract_id := String(button.get_meta("contract_id", ""))
 		var contract := GameState.get_contract_by_id(contract_id)
-		var prefix := ""
-		if index == focused_contract_index:
-			prefix += "> "
-		if contract_id == selected_id:
-			prefix += "[선택] "
-		button.text = "%s%s" % [prefix, String(contract.get("title", "의뢰"))]
+		var tasks: Array = contract.get("tasks", [])
+		var focused := index == focused_contract_index
+		var selected := contract_id == selected_id
+		var state_text := "선택됨" if selected else ("검토 중" if focused else "접수")
+		button.text = "%s\n%s\n%s / 작업 %d개" % [
+			String(contract.get("title", "의뢰")),
+			String(contract.get("location", "현장")),
+			state_text,
+			tasks.size()
+		]
+		UiAssetStyles.apply_contract_card_style(button, focused or selected)
 
 
 func refresh_assignment_panel() -> void:
@@ -944,7 +1121,7 @@ func refresh_assignment_panel() -> void:
 		var button := assignment_buttons[index]
 		var item_type := String(button.get_meta("item_type", ""))
 		var item_id := String(button.get_meta("item_id", ""))
-		var prefix := "> " if index == focused_assignment_index else ""
+		var focused := index == focused_assignment_index
 
 		match item_type:
 			"staff":
@@ -952,35 +1129,21 @@ func refresh_assignment_panel() -> void:
 				var staff_selected := GameState.is_staff_selected(item_id)
 				var injured := bool(member.get("injured", false))
 				button.disabled = not staff_selected and (injured or selected_staff_ids.size() >= GameState.STAFF_SELECTION_LIMIT)
-				button.text = "%s%s%s  체력 %d%s\n청%d 오%d 운%d 함%d" % [
-					prefix,
-					"[선택] " if staff_selected else "",
-					String(member.get("name", item_id)),
-					int(member.get("stamina", 0)),
-					" / 부상" if injured else "",
-					int(member.get("cleanup", 0)),
-					int(member.get("pollution", 0)),
-					int(member.get("hauling", 0)),
-					int(member.get("trap", 0))
-				]
+				button.text = get_staff_slot_text(member)
+				apply_assignment_button_style(button, item_type, focused or staff_selected)
 			"gear":
 				var item := GameState.get_gear_by_id(item_id)
 				var gear_selected := GameState.is_gear_selected(item_id)
 				button.disabled = not gear_selected and selected_gear_ids.size() >= GameState.GEAR_SELECTION_LIMIT
-				button.text = "%s%s%s  비용 %d\n%s" % [
-					prefix,
-					"[선택] " if gear_selected else "",
-					String(item.get("name", item_id)),
-					int(item.get("cost", 0)),
-					GameState.get_gear_effect_text(item)
-				]
+				button.text = get_gear_slot_text(item)
+				apply_assignment_button_style(button, item_type, focused or gear_selected)
 			"dispatch":
 				var blocker := GameState.get_dispatch_blocker()
 				button.disabled = not blocker.is_empty()
-				button.text = "%s%s" % [
-					prefix,
-					"출동" if blocker.is_empty() else "출동 준비 미완료"
-				]
+				button.text = "출동" if blocker.is_empty() else "출동 준비 미완료"
+				apply_assignment_button_style(button, item_type, focused)
+
+	update_assignment_hover_panel()
 
 
 func get_assignment_detail_text() -> String:

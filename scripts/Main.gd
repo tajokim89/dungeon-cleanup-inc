@@ -1,5 +1,6 @@
 extends Control
 
+const UiAssetStyles = preload("res://scripts/UiAssetStyles.gd")
 const GameDataSource = preload("res://data/GameData.gd")
 const TacticalEventScene = preload("res://scenes/TacticalEvent.tscn")
 
@@ -777,11 +778,4 @@ func make_button(text: String) -> Button:
 
 
 func apply_button_style(button: Button) -> void:
-	button.add_theme_color_override("font_color", COLOR_TEXT)
-	button.add_theme_color_override("font_hover_color", COLOR_GOLD)
-	button.add_theme_color_override("font_pressed_color", COLOR_BACKGROUND)
-	button.add_theme_color_override("font_disabled_color", COLOR_MUTED)
-	button.add_theme_stylebox_override("normal", make_panel_style(COLOR_PANEL_ALT, COLOR_BORDER, 2))
-	button.add_theme_stylebox_override("hover", make_panel_style(Color(0.18, 0.18, 0.24), COLOR_GOLD, 2))
-	button.add_theme_stylebox_override("pressed", make_panel_style(COLOR_GREEN, COLOR_GOLD, 2))
-	button.add_theme_stylebox_override("disabled", make_panel_style(Color(0.08, 0.08, 0.1), Color(0.2, 0.18, 0.15), 2))
+	UiAssetStyles.apply_plate_button_style(button)

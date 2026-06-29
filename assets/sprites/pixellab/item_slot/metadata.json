@@ -1,0 +1,64 @@
+{
+  "ui_assets": [
+    {
+      "id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0",
+      "name": null,
+      "prompt": "Use the provided image as the exact style reference. Create a four-state empty item/equipment slot UI sheet for the same dark brass framed dungeon management interface.\n\nThere are four separate square slots arranged in a 2x2 grid: normal, hover, selected, and disabled. Keep all slots the same square proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same restrained premium black metal style as the reference image.\n\nNormal: dark empty black center with thin muted brass frame.\nHover: slightly brighter brass edge with a subtle pale gold highlight.\nSelected: clearer active frame, slightly stronger brass outline, very subtle dark green-gold accent, still restrained.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach slot must remain blank and empty so icons can be added later in Godot.\n\nDo not add item icons, text, numbers, symbols, characters, labels, gems, weapons, potions, or extra decoration. Do not make fantasy RPG inventory icons. Do not make chunky mobile-game buttons. Do not use parchment, wood, leather, bright colors, or glowing magic effects.\n\nTransparent background. Single crop-ready UI slot state sheet. Refined 16/32-bit pixel art. Dark dungeon cleanup company management UI.\n",
+      "kind": "template",
+      "file": "Use_the_provided_image_as_the_exact_style_referenc/Use_the_provided_image_as_the_exact_style_referenc.png",
+      "size": {
+        "width": 512,
+        "height": 512
+      },
+      "group_id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0"
+    },
+    {
+      "id": "03f37c2f-441c-4588-9c98-775313292cb3",
+      "name": "normal empty item slot",
+      "prompt": "Use the provided image as the exact style reference. Create a four-state empty item/equipment slot UI sheet for the same dark brass framed dungeon management interface.\n\nThere are four separate square slots arranged in a 2x2 grid: normal, hover, selected, and disabled. Keep all slots the same square proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same restrained premium black metal style as the reference image.\n\nNormal: dark empty black center with thin muted brass frame.\nHover: slightly brighter brass edge with a subtle pale gold highlight.\nSelected: clearer active frame, slightly stronger brass outline, very subtle dark green-gold accent, still restrained.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach slot must remain blank and empty so icons can be added later in Godot.\n\nDo not add item icons, text, numbers, symbols, characters, labels, gems, weapons, potions, or extra decoration. Do not make fantasy RPG inventory icons. Do not make chunky mobile-game buttons. Do not use parchment, wood, leather, bright colors, or glowing magic effects.\n\nTransparent background. Single crop-ready UI slot state sheet. Refined 16/32-bit pixel art. Dark dungeon cleanup company management UI.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_referenc/elements/normal_empty_item_slot.png",
+      "size": {
+        "width": 160,
+        "height": 167
+      },
+      "group_id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0"
+    },
+    {
+      "id": "9111acd6-83de-4ecb-9c5d-f77c054a3e14",
+      "name": "hover empty item slot",
+      "prompt": "Use the provided image as the exact style reference. Create a four-state empty item/equipment slot UI sheet for the same dark brass framed dungeon management interface.\n\nThere are four separate square slots arranged in a 2x2 grid: normal, hover, selected, and disabled. Keep all slots the same square proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same restrained premium black metal style as the reference image.\n\nNormal: dark empty black center with thin muted brass frame.\nHover: slightly brighter brass edge with a subtle pale gold highlight.\nSelected: clearer active frame, slightly stronger brass outline, very subtle dark green-gold accent, still restrained.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach slot must remain blank and empty so icons can be added later in Godot.\n\nDo not add item icons, text, numbers, symbols, characters, labels, gems, weapons, potions, or extra decoration. Do not make fantasy RPG inventory icons. Do not make chunky mobile-game buttons. Do not use parchment, wood, leather, bright colors, or glowing magic effects.\n\nTransparent background. Single crop-ready UI slot state sheet. Refined 16/32-bit pixel art. Dark dungeon cleanup company management UI.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_referenc/elements/hover_empty_item_slot.png",
+      "size": {
+        "width": 160,
+        "height": 165
+      },
+      "group_id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0"
+    },
+    {
+      "id": "95265233-5a80-4aaf-ba72-976c2b6fd44b",
+      "name": "selected empty item slot",
+      "prompt": "Use the provided image as the exact style reference. Create a four-state empty item/equipment slot UI sheet for the same dark brass framed dungeon management interface.\n\nThere are four separate square slots arranged in a 2x2 grid: normal, hover, selected, and disabled. Keep all slots the same square proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same restrained premium black metal style as the reference image.\n\nNormal: dark empty black center with thin muted brass frame.\nHover: slightly brighter brass edge with a subtle pale gold highlight.\nSelected: clearer active frame, slightly stronger brass outline, very subtle dark green-gold accent, still restrained.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach slot must remain blank and empty so icons can be added later in Godot.\n\nDo not add item icons, text, numbers, symbols, characters, labels, gems, weapons, potions, or extra decoration. Do not make fantasy RPG inventory icons. Do not make chunky mobile-game buttons. Do not use parchment, wood, leather, bright colors, or glowing magic effects.\n\nTransparent background. Single crop-ready UI slot state sheet. Refined 16/32-bit pixel art. Dark dungeon cleanup company management UI.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_referenc/elements/selected_empty_item_slot.png",
+      "size": {
+        "width": 159,
+        "height": 157
+      },
+      "group_id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0"
+    },
+    {
+      "id": "69df13fd-edb2-43b7-9f0d-ffe259764fa5",
+      "name": "disabled empty item slot",
+      "prompt": "Use the provided image as the exact style reference. Create a four-state empty item/equipment slot UI sheet for the same dark brass framed dungeon management interface.\n\nThere are four separate square slots arranged in a 2x2 grid: normal, hover, selected, and disabled. Keep all slots the same square proportions, same dark empty center, same thin muted brass double border, same clipped stepped pixel corners, and same restrained premium black metal style as the reference image.\n\nNormal: dark empty black center with thin muted brass frame.\nHover: slightly brighter brass edge with a subtle pale gold highlight.\nSelected: clearer active frame, slightly stronger brass outline, very subtle dark green-gold accent, still restrained.\nDisabled: darker, desaturated, lower contrast, dull gray-brown brass, no active highlight.\n\nEach slot must remain blank and empty so icons can be added later in Godot.\n\nDo not add item icons, text, numbers, symbols, characters, labels, gems, weapons, potions, or extra decoration. Do not make fantasy RPG inventory icons. Do not make chunky mobile-game buttons. Do not use parchment, wood, leather, bright colors, or glowing magic effects.\n\nTransparent background. Single crop-ready UI slot state sheet. Refined 16/32-bit pixel art. Dark dungeon cleanup company management UI.\n",
+      "kind": "element",
+      "file": "Use_the_provided_image_as_the_exact_style_referenc/elements/disabled_empty_item_slot.png",
+      "size": {
+        "width": 159,
+        "height": 155
+      },
+      "group_id": "2dbe9b48-2342-4091-abe1-33ec1151bfa0"
+    }
+  ]
+}
