@@ -2,8 +2,10 @@ extends Node2D
 
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
 const BATTLE_TEST_SCENE_PATH: String = "res://scenes/BattleTest.tscn"
+const FieldVisionOverlayScript = preload("res://scripts/FieldVisionOverlay.gd")
 const MAP_SIZE: Vector2 = Vector2(1800, 1100)
 const PLAYER_START_POSITION: Vector2 = Vector2(265, 850)
+const FIELD_OBJECT_SCALE: float = 1.45
 const TASK_FIELD_POSITIONS: Array[Vector2] = [
 	Vector2(420, 370),
 	Vector2(1160, 340),
@@ -34,6 +36,7 @@ var progress_label: Label
 var progress_fill: ColorRect
 var completed_task_count: int = 0
 var task_completed: Dictionary = {}
+var task_data_by_id: Dictionary = {}
 var task_visuals: Dictionary = {}
 var task_labels: Dictionary = {}
 var settlement_applied: bool = false
@@ -60,6 +63,7 @@ func build_dungeon() -> void:
 	create_room()
 	create_tasks()
 	create_player()
+	create_vision_overlay()
 	create_ui()
 
 
@@ -92,10 +96,12 @@ func create_tasks() -> void:
 	total_task_count = tasks.size()
 	for task_index in range(tasks.size()):
 		var task: Dictionary = tasks[task_index]
+		var task_id := String(task.get("id", "Task"))
+		task_data_by_id[task_id] = task.duplicate(true)
 		var task_position := get_task_field_position(task, task_index)
 		var task_size: Vector2 = task.get("size", Vector2(128, 72))
 		create_task(
-			String(task.get("id", "Task")),
+			task_id,
 			String(task.get("label", "작업")),
 			String(task.get("action", "작업을 처리했습니다.")),
 			task_position,
@@ -163,9 +169,25 @@ func create_player_camera() -> void:
 	camera.make_current()
 
 
+func create_vision_overlay() -> void:
+	var fog_canvas := CanvasLayer.new()
+	fog_canvas.name = "VisionLayer"
+	fog_canvas.layer = 1
+	add_child(fog_canvas)
+
+	var overlay := FieldVisionOverlayScript.new()
+	overlay.name = "FieldVisionOverlay"
+	overlay.tracked_target = player
+	overlay.visible_radius = 360.0
+	overlay.fade_radius = 96.0
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fog_canvas.add_child(overlay)
+
+
 func create_ui() -> void:
 	var canvas := CanvasLayer.new()
 	canvas.name = "CanvasLayer"
+	canvas.layer = 2
 	add_child(canvas)
 
 	var panel := PanelContainer.new()
@@ -296,7 +318,7 @@ func create_block(node_name: String, rect: Rect2) -> void:
 
 
 func create_task(node_name: String, label: String, action: String, position: Vector2, size: Vector2, color: Color) -> void:
-	var visual := create_interactable(node_name, label, action, position, size, color)
+	var visual := create_interactable(node_name, label, action, position, get_scaled_field_object_size(size), color)
 	task_visuals[node_name] = visual
 	task_completed[node_name] = false
 	if GameState.is_field_task_completed(node_name):
@@ -314,7 +336,7 @@ func create_combat_event() -> void:
 		String(combat_event.get("label", "전투 이벤트")),
 		String(combat_event.get("action", "현장 전투를 시작합니다.")),
 		combat_position,
-		combat_event.get("size", Vector2(132, 84)),
+		get_scaled_field_object_size(combat_event.get("size", Vector2(132, 84))),
 		COLOR_COMBAT
 	)
 
@@ -350,6 +372,13 @@ func get_task_field_position(task: Dictionary, task_index: int) -> Vector2:
 	if TASK_FIELD_POSITIONS.is_empty():
 		return task.get("position", PLAYER_START_POSITION)
 	return TASK_FIELD_POSITIONS[task_index % TASK_FIELD_POSITIONS.size()]
+
+
+func get_scaled_field_object_size(size: Vector2) -> Vector2:
+	return Vector2(
+		maxf(120.0, size.x * FIELD_OBJECT_SCALE),
+		maxf(82.0, size.y * FIELD_OBJECT_SCALE)
+	)
 
 
 func create_interactable(node_name: String, label: String, action: String, position: Vector2, size: Vector2, color: Color) -> ColorRect:
@@ -469,20 +498,50 @@ func complete_task(task_name: String, target: Interactable) -> void:
 		status_label.text = "%s은 이미 처리했습니다." % target.label
 		return
 
+	var action_text := target.action
 	task_completed[task_name] = true
 	completed_task_count += 1
 	target.action = "%s은 이미 처리했습니다." % target.label
 	GameState.mark_field_task_completed(task_name)
 
 	apply_task_completed_visual(task_name, target.label)
-	status_label.text = "현장 작업 완료: %s" % target.label
+	status_label.text = get_task_completion_status_text(task_name, target.label, action_text)
 	update_progress_label()
 
+	prompt_label.text = get_next_field_prompt_text()
+
+
+func get_task_completion_status_text(task_name: String, task_label: String, action_text: String) -> String:
+	var task: Dictionary = task_data_by_id.get(task_name, {})
+	var effect_summary := get_task_effect_summary(task)
+	if effect_summary.is_empty():
+		return "%s 완료: %s" % [task_label, action_text]
+	return "%s 완료 | 효과: %s" % [task_label, effect_summary]
+
+
+func get_task_effect_summary(task: Dictionary) -> String:
+	if task.is_empty():
+		return ""
+
+	var effect_lines := GameState.get_field_task_effect_lines(task)
+	if effect_lines.is_empty():
+		return "편성 보정 없음"
+
+	var shown_lines: Array[String] = []
+	for index in range(mini(2, effect_lines.size())):
+		shown_lines.append(effect_lines[index])
+
+	if effect_lines.size() > shown_lines.size():
+		shown_lines.append("외 %d개" % (effect_lines.size() - shown_lines.size()))
+	return " / ".join(shown_lines)
+
+
+func get_next_field_prompt_text() -> String:
 	if completed_task_count >= total_task_count:
 		if GameState.should_spawn_combat_event(current_contract):
-			prompt_label.text = "남은 전투 이벤트를 처리하세요."
-		else:
-			prompt_label.text = "복귀문으로 돌아가세요."
+			return "남은 전투 이벤트를 처리하세요."
+		return "복귀문으로 돌아가세요."
+	return "다음 작업 대상 근처에서 E / Space"
 
 
 func apply_task_completed_visual(task_name: String, task_label: String) -> void:
