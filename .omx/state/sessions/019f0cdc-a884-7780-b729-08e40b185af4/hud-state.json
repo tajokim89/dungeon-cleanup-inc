@@ -1,6 +1,0 @@
-{
-  "last_turn_at": "2026-06-28T06:27:58.594Z",
-  "turn_count": 3,
-  "last_progress_at": "2026-06-28T06:27:58.594Z",
-  "last_agent_output": "지금 제가 쓰기 가능하게 “직접 전환”할 수는 없습니다. 이건 Codex 세션을 시작할 때 정해지는 권한입니다. 현재 컨텍스트가 이렇게 되어 있습니다:\n\n```text\nsandbo"
-}

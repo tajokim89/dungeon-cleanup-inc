@@ -1,6 +1,0 @@
-{
-  "last_turn_at": "2026-06-28T06:24:45.500Z",
-  "last_progress_at": "2026-06-28T06:24:45.500Z",
-  "turn_count": 1,
-  "last_agent_output": "SSH 키로 GitHub 푸시 세팅하는 최소 절차입니다. WSL 터미널에서 실행하세요.\n\n1. SSH 키 있는지 확인\n\n```bash\nls -la ~/.ssh\n```\n\n`id_ed"
-}
