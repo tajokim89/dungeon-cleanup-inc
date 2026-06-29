@@ -26,6 +26,14 @@ const PHASE_SELECT_SKILL_TARGET: String = "select_skill_target"
 const PHASE_ENEMY_TURN: String = "enemy_turn"
 const PHASE_VICTORY: String = "victory"
 const PHASE_DEFEAT: String = "defeat"
+const ACTION_MOVE: int = 0
+const ACTION_ATTACK: int = 1
+const ACTION_DEFEND: int = 2
+const ACTION_SKILL: int = 3
+const ACTION_FLEE: int = 4
+const ACTION_WAIT: int = 5
+const ACTION_MENU_COLUMNS: int = 2
+const ACTION_MENU_ROWS: int = 3
 
 const COLOR_BACKGROUND: Color = Color(0.05, 0.052, 0.061)
 const COLOR_TILE_A: Color = Color(0.11, 0.119, 0.137)
@@ -95,6 +103,7 @@ var has_moved: bool = false
 var has_acted: bool = false
 var player_defending: bool = false
 var skill_used: bool = false
+var selected_action_index: int = ACTION_MOVE
 var board_layer: Node2D
 var highlight_layer: Node2D
 var unit_layer: Node2D
@@ -655,26 +664,29 @@ func _unhandled_input(event: InputEvent) -> void:
 func handle_player_key(keycode: Key) -> void:
 	var offset := key_to_grid_offset(keycode)
 	if offset != Vector2i.ZERO:
-		handle_cursor_direction(offset)
+		if battle_phase == PHASE_CHOOSE_ACTION:
+			handle_action_menu_direction(offset)
+		else:
+			handle_cursor_direction(offset)
 		return
 
 	match keycode:
 		KEY_ESCAPE:
 			cancel_action_selection()
-		KEY_SPACE, KEY_ENTER:
+		KEY_E, KEY_SPACE, KEY_ENTER:
 			confirm_cursor_action()
 		KEY_1:
-			_on_move_pressed()
+			execute_action_command(ACTION_MOVE)
 		KEY_2:
-			_on_attack_pressed()
+			execute_action_command(ACTION_ATTACK)
 		KEY_3:
-			_on_defend_pressed()
+			execute_action_command(ACTION_DEFEND)
 		KEY_4:
-			_on_skill_pressed()
+			execute_action_command(ACTION_SKILL)
 		KEY_5:
-			_on_flee_pressed()
+			execute_action_command(ACTION_FLEE)
 		KEY_6:
-			_on_wait_pressed()
+			execute_action_command(ACTION_WAIT)
 
 
 func key_to_grid_offset(keycode: Key) -> Vector2i:
@@ -691,15 +703,6 @@ func key_to_grid_offset(keycode: Key) -> Vector2i:
 
 
 func handle_cursor_direction(offset: Vector2i) -> void:
-	if battle_phase == PHASE_CHOOSE_ACTION:
-		if has_selected_unit_acted():
-			update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
-			return
-		if has_selected_unit_moved():
-			update_status("%s은 이번 턴에 이미 이동했습니다." % get_selected_unit_label())
-			return
-		enter_move_selection(false)
-
 	if battle_phase == PHASE_SELECT_ATTACK_TARGET or battle_phase == PHASE_SELECT_SKILL_TARGET:
 		cycle_target_cursor(offset)
 		return
@@ -709,8 +712,23 @@ func handle_cursor_direction(offset: Vector2i) -> void:
 	update_cursor_status(false)
 
 
+func handle_action_menu_direction(offset: Vector2i) -> void:
+	if battle_phase != PHASE_CHOOSE_ACTION:
+		return
+
+	var next_index := get_next_action_index(selected_action_index, offset)
+	if next_index == selected_action_index:
+		return
+
+	selected_action_index = next_index
+	update_action_menu()
+	update_status("%s 선택." % get_selected_action_label(), false)
+
+
 func confirm_cursor_action() -> void:
 	match battle_phase:
+		PHASE_CHOOSE_ACTION:
+			execute_action_command(selected_action_index)
 		PHASE_SELECT_MOVE_TILE:
 			try_move_to_cell(cursor_cell)
 		PHASE_SELECT_ATTACK_TARGET:
@@ -721,9 +739,27 @@ func confirm_cursor_action() -> void:
 			update_status("먼저 행동 메뉴에서 명령을 선택하세요.")
 
 
+func execute_action_command(action_index: int) -> void:
+	selected_action_index = clampi(action_index, 0, get_action_buttons().size() - 1)
+	match selected_action_index:
+		ACTION_MOVE:
+			_on_move_pressed()
+		ACTION_ATTACK:
+			_on_attack_pressed()
+		ACTION_DEFEND:
+			_on_defend_pressed()
+		ACTION_SKILL:
+			_on_skill_pressed()
+		ACTION_FLEE:
+			_on_flee_pressed()
+		ACTION_WAIT:
+			_on_wait_pressed()
+
+
 func select_ally_cell(cell: Vector2i) -> void:
 	if cell == player_cell:
 		selected_unit_id = BOSS_UNIT_ID
+		selected_action_index = ACTION_MOVE
 		cursor_cell = player_cell
 		refresh_highlights()
 		update_status("사장 선택: 직접 전투 지휘.", false)
@@ -736,6 +772,7 @@ func select_ally_cell(cell: Vector2i) -> void:
 		return
 
 	selected_unit_id = String(staff.get("id", BOSS_UNIT_ID))
+	selected_action_index = ACTION_MOVE
 	cursor_cell = cell
 	refresh_highlights()
 	update_status("%s 선택: 이동/공격 가능." % String(staff.get("label", "직원")), false)
@@ -764,6 +801,7 @@ func handle_player_cell_action(cell: Vector2i) -> void:
 
 
 func _on_move_pressed() -> void:
+	selected_action_index = ACTION_MOVE
 	if not is_player_control_phase():
 		return
 	if has_selected_unit_acted():
@@ -777,6 +815,7 @@ func _on_move_pressed() -> void:
 
 
 func _on_attack_pressed() -> void:
+	selected_action_index = ACTION_ATTACK
 	if not is_player_control_phase():
 		return
 	if has_selected_unit_acted():
@@ -791,6 +830,7 @@ func _on_attack_pressed() -> void:
 
 
 func _on_defend_pressed() -> void:
+	selected_action_index = ACTION_DEFEND
 	if not is_player_control_phase():
 		return
 	if has_selected_unit_acted():
@@ -804,6 +844,7 @@ func _on_defend_pressed() -> void:
 
 
 func _on_skill_pressed() -> void:
+	selected_action_index = ACTION_SKILL
 	if not is_player_control_phase():
 		return
 	if selected_unit_id != BOSS_UNIT_ID:
@@ -824,6 +865,7 @@ func _on_skill_pressed() -> void:
 
 
 func _on_flee_pressed() -> void:
+	selected_action_index = ACTION_FLEE
 	if not is_player_control_phase():
 		return
 
@@ -832,6 +874,7 @@ func _on_flee_pressed() -> void:
 
 
 func _on_wait_pressed() -> void:
+	selected_action_index = ACTION_WAIT
 	if not is_player_control_phase():
 		return
 
@@ -1009,6 +1052,7 @@ func start_player_turn(message: String) -> void:
 		staff_units[index]["acted"] = false
 		staff_units[index]["defending"] = false
 	selected_unit_id = BOSS_UNIT_ID
+	selected_action_index = ACTION_MOVE
 	cursor_cell = get_selected_unit_cell()
 	update_units()
 	update_status(message)
@@ -1025,6 +1069,7 @@ func finish_selected_unit_action() -> void:
 	battle_phase = PHASE_CHOOSE_ACTION
 	var previous_label := get_selected_unit_label()
 	select_next_ready_unit()
+	selected_action_index = ACTION_MOVE
 	update_units()
 	update_status("%s 행동 완료. 다음 아군: %s" % [previous_label, get_selected_unit_label()])
 	update_action_menu()
@@ -1308,6 +1353,141 @@ func update_target_info_label(text: String) -> void:
 		target_info_label.text = text
 
 
+func get_action_buttons() -> Array[Button]:
+	var buttons: Array[Button] = [
+		move_button,
+		attack_button,
+		defend_button,
+		skill_button,
+		flee_button,
+		wait_button
+	]
+	return buttons
+
+
+func get_action_label(action_index: int) -> String:
+	match action_index:
+		ACTION_MOVE:
+			return "이동"
+		ACTION_ATTACK:
+			return "공격"
+		ACTION_DEFEND:
+			return "방어"
+		ACTION_SKILL:
+			return "지원 명령"
+		ACTION_FLEE:
+			return "철수"
+		ACTION_WAIT:
+			return "대기"
+	return "명령"
+
+
+func get_selected_action_label() -> String:
+	return get_action_label(selected_action_index)
+
+
+func get_action_display_label(action_index: int) -> String:
+	var label := get_action_label(action_index)
+	if battle_phase == PHASE_SELECT_MOVE_TILE and action_index == ACTION_MOVE:
+		label = "이동 선택 중"
+	elif battle_phase == PHASE_SELECT_ATTACK_TARGET and action_index == ACTION_ATTACK:
+		label = "공격 선택 중"
+	elif battle_phase == PHASE_SELECT_SKILL_TARGET and action_index == ACTION_SKILL:
+		label = "지원 선택 중"
+
+	if battle_phase == PHASE_CHOOSE_ACTION and action_index == selected_action_index:
+		return "> %s" % label
+	return label
+
+
+func is_action_index_enabled(action_index: int) -> bool:
+	var buttons := get_action_buttons()
+	if action_index < 0 or action_index >= buttons.size():
+		return false
+	var button := buttons[action_index]
+	return button != null and not button.disabled
+
+
+func normalize_selected_action_index() -> void:
+	if battle_phase != PHASE_CHOOSE_ACTION:
+		return
+	if is_action_index_enabled(selected_action_index):
+		return
+
+	var buttons := get_action_buttons()
+	for action_index in range(buttons.size()):
+		if is_action_index_enabled(action_index):
+			selected_action_index = action_index
+			return
+
+	selected_action_index = ACTION_MOVE
+
+
+func get_next_action_index(current_index: int, offset: Vector2i) -> int:
+	var direction := Vector2i(signi(offset.x), signi(offset.y))
+	if direction == Vector2i.ZERO:
+		return current_index
+
+	var candidate := current_index
+	while true:
+		var row := floori(float(candidate) / float(ACTION_MENU_COLUMNS))
+		var column := candidate % ACTION_MENU_COLUMNS
+
+		if direction.x != 0:
+			column += direction.x
+		else:
+			row += direction.y
+
+		if column < 0 or column >= ACTION_MENU_COLUMNS or row < 0 or row >= ACTION_MENU_ROWS:
+			return current_index
+
+		candidate = (row * ACTION_MENU_COLUMNS) + column
+		if is_action_index_enabled(candidate):
+			return candidate
+
+	return current_index
+
+
+func update_choose_action_info() -> void:
+	action_detail_label.text = "%s: %s" % [get_selected_unit_label(), get_selected_action_label()]
+
+	match selected_action_index:
+		ACTION_MOVE:
+			if has_selected_unit_acted():
+				update_target_info_label("이동 불가\n이미 행동했습니다.")
+			elif has_selected_unit_moved():
+				update_target_info_label("이동 불가\n이미 이동했습니다.")
+			else:
+				update_target_info_label("이동\n최대 %d칸 이동합니다." % get_selected_unit_move_range())
+		ACTION_ATTACK:
+			if has_selected_unit_acted():
+				update_target_info_label("공격 불가\n이미 행동했습니다.")
+			elif has_adjacent_enemy():
+				update_target_info_label("공격 가능\n인접한 적이 있습니다.")
+			else:
+				update_target_info_label("공격 대상 없음\n적과 인접해야 합니다.")
+		ACTION_DEFEND:
+			if has_selected_unit_acted():
+				update_target_info_label("방어 불가\n이미 행동했습니다.")
+			else:
+				update_target_info_label("방어\n다음 피해를 줄이고 행동을 마칩니다.")
+		ACTION_SKILL:
+			if selected_unit_id != BOSS_UNIT_ID:
+				update_target_info_label("지원 명령 불가\n사장만 사용할 수 있습니다.")
+			elif has_selected_unit_acted():
+				update_target_info_label("지원 명령 불가\n이미 행동했습니다.")
+			elif skill_used:
+				update_target_info_label("지원 명령 불가\n이미 사용했습니다.")
+			elif has_skill_target():
+				update_target_info_label("지원 명령 가능\n사거리 %d칸 안의 적이 있습니다." % PLAYER_SKILL_RANGE)
+			else:
+				update_target_info_label("지원 명령 대상 없음\n사거리 안의 적이 필요합니다.")
+		ACTION_FLEE:
+			update_target_info_label("철수\n전투를 해결하지 않고 현장으로 돌아갑니다.")
+		ACTION_WAIT:
+			update_target_info_label("대기\n행동을 마치고 다음 아군으로 넘깁니다.")
+
+
 func update_action_menu() -> void:
 	if move_button == null:
 		return
@@ -1320,22 +1500,14 @@ func update_action_menu() -> void:
 	flee_button.disabled = not can_choose
 	wait_button.disabled = not can_choose
 
-	move_button.text = "이동 선택 중" if battle_phase == PHASE_SELECT_MOVE_TILE else "이동"
-	attack_button.text = "공격 선택 중" if battle_phase == PHASE_SELECT_ATTACK_TARGET else "공격"
-	skill_button.text = "지원 선택 중" if battle_phase == PHASE_SELECT_SKILL_TARGET else "지원 명령"
-	defend_button.text = "방어"
-	flee_button.text = "철수"
-	wait_button.text = "대기"
+	normalize_selected_action_index()
+	var buttons := get_action_buttons()
+	for action_index in range(buttons.size()):
+		buttons[action_index].text = get_action_display_label(action_index)
 
 	match battle_phase:
 		PHASE_CHOOSE_ACTION:
-			action_detail_label.text = "%s 명령을 선택하세요. 다른 아군을 클릭해 전환할 수 있습니다." % get_selected_unit_label()
-			if has_adjacent_enemy():
-				update_target_info_label("공격 가능\n인접한 적이 있습니다.")
-			elif has_skill_target() and not skill_used:
-				update_target_info_label("지원 명령 가능\n사거리 %d칸 안의 적이 있습니다." % PLAYER_SKILL_RANGE)
-			else:
-				update_target_info_label(get_selected_unit_info_text())
+			update_choose_action_info()
 			prompt_label.text = "아군 턴: 행동 선택"
 		PHASE_SELECT_MOVE_TILE:
 			action_detail_label.text = "%s 이동 칸을 선택합니다." % get_selected_unit_label()
