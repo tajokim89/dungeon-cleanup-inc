@@ -2,7 +2,13 @@ extends Node2D
 
 const OFFICE_SCENE_PATH: String = "res://scenes/Office.tscn"
 const BATTLE_TEST_SCENE_PATH: String = "res://scenes/BattleTest.tscn"
-const PLAYER_START_POSITION: Vector2 = Vector2(230, 520)
+const MAP_SIZE: Vector2 = Vector2(1800, 1100)
+const PLAYER_START_POSITION: Vector2 = Vector2(265, 850)
+const TASK_FIELD_POSITIONS: Array[Vector2] = [
+	Vector2(420, 370),
+	Vector2(1160, 340),
+	Vector2(1400, 760)
+]
 
 const COLOR_BACKGROUND: Color = Color(0.047, 0.052, 0.061)
 const COLOR_FLOOR: Color = Color(0.102, 0.118, 0.102)
@@ -62,27 +68,31 @@ func create_background() -> void:
 	background.name = "Background"
 	background.color = COLOR_BACKGROUND
 	background.position = Vector2.ZERO
-	background.size = Vector2(1270, 720)
+	background.size = MAP_SIZE
 	add_child(background)
 
 
 func create_room() -> void:
-	create_rect("Floor", Rect2(Vector2(130, 156), Vector2(1010, 444)), COLOR_FLOOR)
-	create_wall("NorthWall", Rect2(Vector2(130, 156), Vector2(1010, 30)))
-	create_wall("SouthWall", Rect2(Vector2(130, 570), Vector2(1010, 30)))
-	create_wall("WestWall", Rect2(Vector2(130, 156), Vector2(30, 444)))
-	create_wall("EastWall", Rect2(Vector2(1110, 156), Vector2(30, 444)))
+	create_rect("Floor", Rect2(Vector2(120, 145), Vector2(1560, 840)), COLOR_FLOOR)
+	create_wall("NorthWall", Rect2(Vector2(120, 145), Vector2(1560, 30)))
+	create_wall("SouthWall", Rect2(Vector2(120, 955), Vector2(1560, 30)))
+	create_wall("WestWall", Rect2(Vector2(120, 145), Vector2(30, 840)))
+	create_wall("EastWall", Rect2(Vector2(1650, 145), Vector2(30, 840)))
 
-	create_block("BrokenPillarA", Rect2(Vector2(450, 390), Vector2(88, 96)))
-	create_block("BrokenPillarB", Rect2(Vector2(760, 220), Vector2(92, 90)))
-	create_block("RubbleStack", Rect2(Vector2(850, 520), Vector2(150, 48)))
+	create_block("BrokenPillarA", Rect2(Vector2(460, 430), Vector2(92, 112)))
+	create_block("BrokenPillarB", Rect2(Vector2(825, 250), Vector2(96, 94)))
+	create_block("RubbleStackA", Rect2(Vector2(965, 610), Vector2(185, 54)))
+	create_block("RubbleStackB", Rect2(Vector2(560, 760), Vector2(210, 58)))
+	create_block("CollapsedCart", Rect2(Vector2(1315, 505), Vector2(128, 86)))
+	create_block("SupplyCrates", Rect2(Vector2(1485, 845), Vector2(120, 74)))
 
 
 func create_tasks() -> void:
 	var tasks: Array = current_contract.get("tasks", [])
 	total_task_count = tasks.size()
-	for task: Dictionary in tasks:
-		var task_position: Vector2 = task.get("position", Vector2.ZERO)
+	for task_index in range(tasks.size()):
+		var task: Dictionary = tasks[task_index]
+		var task_position := get_task_field_position(task, task_index)
 		var task_size: Vector2 = task.get("size", Vector2(128, 72))
 		create_task(
 			String(task.get("id", "Task")),
@@ -99,7 +109,7 @@ func create_tasks() -> void:
 		"ReturnDoor",
 		"사무실 복귀문",
 		"사무실로 복귀합니다.",
-		Vector2(1030, 250),
+		Vector2(1555, 290),
 		Vector2(92, 116),
 		COLOR_EXIT
 	)
@@ -134,8 +144,23 @@ func create_player() -> void:
 	interaction_area.add_child(interaction_shape)
 
 	add_child(player)
+	create_player_camera()
 	player.interaction_target_changed.connect(_on_interaction_target_changed)
 	player.interaction_requested.connect(_on_player_interaction_requested)
+
+
+func create_player_camera() -> void:
+	var camera := Camera2D.new()
+	camera.name = "FollowCamera"
+	camera.enabled = true
+	camera.position_smoothing_enabled = true
+	camera.position_smoothing_speed = 6.0
+	camera.limit_left = 0
+	camera.limit_top = 0
+	camera.limit_right = int(MAP_SIZE.x)
+	camera.limit_bottom = int(MAP_SIZE.y)
+	player.add_child(camera)
+	camera.make_current()
 
 
 func create_ui() -> void:
@@ -283,11 +308,12 @@ func create_combat_event() -> void:
 		return
 
 	var combat_event := GameState.get_combat_event(current_contract)
+	var combat_position: Vector2 = combat_event.get("field_position", Vector2(1125, 735))
 	create_interactable(
 		"CombatEvent",
 		String(combat_event.get("label", "전투 이벤트")),
 		String(combat_event.get("action", "현장 전투를 시작합니다.")),
-		combat_event.get("position", Vector2(760, 465)),
+		combat_position,
 		combat_event.get("size", Vector2(132, 84)),
 		COLOR_COMBAT
 	)
@@ -316,6 +342,14 @@ func get_task_color(kind: String) -> Color:
 			return COLOR_STONE
 		_:
 			return COLOR_BONE
+
+
+func get_task_field_position(task: Dictionary, task_index: int) -> Vector2:
+	if task.has("field_position"):
+		return task.get("field_position", Vector2.ZERO)
+	if TASK_FIELD_POSITIONS.is_empty():
+		return task.get("position", PLAYER_START_POSITION)
+	return TASK_FIELD_POSITIONS[task_index % TASK_FIELD_POSITIONS.size()]
 
 
 func create_interactable(node_name: String, label: String, action: String, position: Vector2, size: Vector2, color: Color) -> ColorRect:

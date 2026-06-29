@@ -5,16 +5,20 @@ const ExplorerHoldoutTexture = preload("res://assets/sprites/enemies/explorer_ho
 const HiredInspectorTexture = preload("res://assets/sprites/enemies/hired_inspector.svg")
 
 const DUNGEON_TEST_SCENE_PATH: String = "res://scenes/DungeonTest.tscn"
-const BOARD_ORIGIN: Vector2 = Vector2(407, 142)
-const GRID_WIDTH: int = 6
-const GRID_HEIGHT: int = 6
-const CELL_SIZE: float = 68.0
+const BOARD_ORIGIN: Vector2 = Vector2(330, 168)
+const GRID_WIDTH: int = 8
+const GRID_HEIGHT: int = 7
+const CELL_SIZE: float = 60.0
 const PLAYER_MAX_HP: int = 12
 const PLAYER_ATTACK: int = 3
 const PLAYER_SKILL_DAMAGE: int = 2
-const PLAYER_MOVE_RANGE: int = 2
-const PLAYER_SKILL_RANGE: int = 2
+const PLAYER_MOVE_RANGE: int = 3
+const PLAYER_SKILL_RANGE: int = 3
+const SUPPORT_DEFENSE_REDUCTION: int = 1
+const SUPPORT_SKILL_DAMAGE_BONUS: int = 1
 const UNIT_SPRITE_SCALE: Vector2 = Vector2(0.66, 0.66)
+const INVALID_CELL: Vector2i = Vector2i(-1, -1)
+const BOSS_UNIT_ID: String = "boss"
 const PHASE_CHOOSE_ACTION: String = "choose_action"
 const PHASE_SELECT_MOVE_TILE: String = "select_move_tile"
 const PHASE_SELECT_ATTACK_TARGET: String = "select_attack_target"
@@ -34,6 +38,9 @@ const COLOR_ATTACK_HIGHLIGHT: Color = Color(0.827, 0.361, 0.294, 0.52)
 const COLOR_SKILL_HIGHLIGHT: Color = Color(0.361, 0.784, 0.741, 0.46)
 const COLOR_SELECTED_HIGHLIGHT: Color = Color(0.851, 0.694, 0.373, 0.35)
 const COLOR_CURSOR_HIGHLIGHT: Color = Color(1.0, 0.894, 0.518, 0.75)
+const COLOR_OBSTACLE_TILE: Color = Color(0.19, 0.17, 0.14)
+const COLOR_OBJECTIVE_TILE: Color = Color(0.18, 0.32, 0.22)
+const COLOR_STAFF_SUPPORT: Color = Color(0.361, 0.549, 0.722)
 const COLOR_PANEL: Color = Color(0.078, 0.083, 0.098)
 const COLOR_PANEL_DARK: Color = Color(0.047, 0.052, 0.063)
 const COLOR_TEXT: Color = Color(0.902, 0.863, 0.784)
@@ -41,12 +48,47 @@ const COLOR_GOLD: Color = Color(0.851, 0.694, 0.373)
 const COLOR_MUTED: Color = Color(0.604, 0.573, 0.518)
 const COLOR_WARNING: Color = Color(0.808, 0.431, 0.349)
 const COLOR_SUCCESS: Color = Color(0.494, 0.686, 0.443)
+const OBJECTIVE_CELL: Vector2i = Vector2i(6, 3)
+const OBSTACLE_CELLS: Array[Vector2i] = [
+	Vector2i(2, 1),
+	Vector2i(3, 2),
+	Vector2i(4, 3),
+	Vector2i(2, 5),
+	Vector2i(5, 1),
+	Vector2i(6, 5)
+]
+const STAFF_SUPPORT_UNITS: Array[Dictionary] = [
+	{
+		"id": "greek_support",
+		"label": "그릭",
+		"role": "청소반",
+		"cell": Vector2i(0, 5),
+		"hp": 6,
+		"max_hp": 6,
+		"attack": 2,
+		"move_range": 3,
+		"note": "방어 보조"
+	},
+	{
+		"id": "melta_support",
+		"label": "멜타",
+		"role": "회수반",
+		"cell": Vector2i(1, 6),
+		"hp": 5,
+		"max_hp": 5,
+		"attack": 2,
+		"move_range": 3,
+		"note": "지원 명령 +1"
+	}
+]
 
 var current_contract: Dictionary = {}
 var combat_event: Dictionary = {}
-var player_cell: Vector2i = Vector2i(0, 2)
+var player_cell: Vector2i = Vector2i(0, 3)
 var cursor_cell: Vector2i = player_cell
+var selected_unit_id: String = BOSS_UNIT_ID
 var player_hp: int = PLAYER_MAX_HP
+var staff_units: Array[Dictionary] = []
 var enemies: Array[Dictionary] = []
 var battle_phase: String = PHASE_CHOOSE_ACTION
 var has_moved: bool = false
@@ -89,6 +131,7 @@ func _ready() -> void:
 			"label": "방해 세력"
 		}
 
+	setup_staff_units()
 	setup_enemies()
 	build_battle()
 	update_units()
@@ -100,7 +143,7 @@ func setup_enemies() -> void:
 		{
 			"id": "holdout_a",
 			"label": "탐사대 잔당",
-			"cell": Vector2i(4, 1),
+			"cell": Vector2i(6, 1),
 			"hp": 4,
 			"max_hp": 4,
 			"attack": 2,
@@ -109,13 +152,32 @@ func setup_enemies() -> void:
 		{
 			"id": "holdout_b",
 			"label": "고용 검문관",
-			"cell": Vector2i(5, 4),
+			"cell": Vector2i(7, 5),
 			"hp": 5,
 			"max_hp": 5,
 			"attack": 2,
 			"texture": HiredInspectorTexture
+		},
+		{
+			"id": "holdout_c",
+			"label": "잔류 도굴꾼",
+			"cell": Vector2i(5, 3),
+			"hp": 3,
+			"max_hp": 3,
+			"attack": 1,
+			"texture": ExplorerHoldoutTexture
 		}
 	]
+
+
+func setup_staff_units() -> void:
+	staff_units.clear()
+	for blueprint: Dictionary in STAFF_SUPPORT_UNITS:
+		var unit := blueprint.duplicate(true)
+		unit["moved"] = false
+		unit["acted"] = false
+		unit["defending"] = false
+		staff_units.append(unit)
 
 
 func build_battle() -> void:
@@ -146,6 +208,11 @@ func create_board() -> void:
 			tile.size = Vector2(CELL_SIZE, CELL_SIZE)
 			tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			var tile_color := COLOR_TILE_A if (x + y) % 2 == 0 else COLOR_TILE_B
+			var cell := Vector2i(x, y)
+			if is_obstacle_cell(cell):
+				tile_color = COLOR_OBSTACLE_TILE
+			elif is_objective_cell(cell):
+				tile_color = COLOR_OBJECTIVE_TILE
 			tile.add_theme_stylebox_override("panel", make_panel_style(tile_color, COLOR_TILE_BORDER, 1))
 			board_layer.add_child(tile)
 
@@ -178,7 +245,7 @@ func create_ui() -> void:
 	panel.offset_left = 24
 	panel.offset_top = 20
 	panel.offset_right = 760
-	panel.offset_bottom = 174
+	panel.offset_bottom = 164
 	panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_TILE_BORDER, 2))
 	canvas.add_child(panel)
 
@@ -270,7 +337,7 @@ func create_ui() -> void:
 	move_button = make_action_button("이동", Callable(self, "_on_move_pressed"))
 	attack_button = make_action_button("공격", Callable(self, "_on_attack_pressed"))
 	defend_button = make_action_button("방어", Callable(self, "_on_defend_pressed"))
-	skill_button = make_action_button("스킬", Callable(self, "_on_skill_pressed"))
+	skill_button = make_action_button("지원 명령", Callable(self, "_on_skill_pressed"))
 	flee_button = make_action_button("철수", Callable(self, "_on_flee_pressed"))
 	wait_button = make_action_button("대기", Callable(self, "_on_wait_pressed"))
 
@@ -292,7 +359,7 @@ func create_ui() -> void:
 	message_panel.anchor_right = 1.0
 	message_panel.anchor_bottom = 1.0
 	message_panel.offset_left = 24
-	message_panel.offset_top = -132
+	message_panel.offset_top = -124
 	message_panel.offset_right = -24
 	message_panel.offset_bottom = -20
 	message_panel.add_theme_stylebox_override("panel", make_panel_style(COLOR_PANEL, COLOR_TILE_BORDER, 2))
@@ -332,6 +399,11 @@ func make_action_button(text: String, callback: Callable) -> Button:
 func update_units() -> void:
 	for child in unit_layer.get_children():
 		child.queue_free()
+
+	create_objective_marker()
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff):
+			create_staff_support_marker(staff)
 
 	create_unit_marker("PlayerUnit", player_cell, PlayerBattleTexture, "사장", player_hp, PLAYER_MAX_HP, COLOR_PLAYER)
 	for enemy: Dictionary in enemies:
@@ -373,8 +445,8 @@ func create_unit_marker(
 
 	var shadow := ColorRect.new()
 	shadow.name = "Shadow"
-	shadow.position = Vector2(15.0, 51.0)
-	shadow.size = Vector2(38.0, 7.0)
+	shadow.position = Vector2(13.0, CELL_SIZE - 16.0)
+	shadow.size = Vector2(CELL_SIZE - 26.0, 6.0)
 	shadow.color = Color(0.0, 0.0, 0.0, 0.35)
 	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(shadow)
@@ -384,13 +456,13 @@ func create_unit_marker(
 	sprite.texture = texture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.position = Vector2(CELL_SIZE * 0.5, CELL_SIZE * 0.43)
-	sprite.scale = UNIT_SPRITE_SCALE
+	sprite.scale = UNIT_SPRITE_SCALE * 0.92
 	marker.add_child(sprite)
 
 	var hp_track := ColorRect.new()
 	hp_track.name = "HpTrack"
-	hp_track.position = Vector2(8.0, 58.0)
-	hp_track.size = Vector2(52.0, 6.0)
+	hp_track.position = Vector2(7.0, CELL_SIZE - 9.0)
+	hp_track.size = Vector2(CELL_SIZE - 14.0, 5.0)
 	hp_track.color = COLOR_PANEL_DARK
 	hp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(hp_track)
@@ -399,18 +471,74 @@ func create_unit_marker(
 	hp_fill.name = "HpFill"
 	hp_fill.position = hp_track.position
 	var hp_ratio := clampf(float(hp) / float(maxi(max_hp, 1)), 0.0, 1.0)
-	hp_fill.size = Vector2(52.0 * hp_ratio, 6.0)
+	hp_fill.size = Vector2((CELL_SIZE - 14.0) * hp_ratio, 5.0)
 	hp_fill.color = hp_color
 	hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(hp_fill)
 
 	var hp_label := make_label("%d/%d" % [hp, max_hp], 9, Color.WHITE)
-	hp_label.position = Vector2(8.0, 55.0)
-	hp_label.size = Vector2(52.0, 12.0)
+	hp_label.position = Vector2(7.0, CELL_SIZE - 13.0)
+	hp_label.size = Vector2(CELL_SIZE - 14.0, 11.0)
 	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(hp_label)
+
+
+func create_staff_support_marker(support: Dictionary) -> void:
+	var cell: Vector2i = support.get("cell", Vector2i.ZERO)
+	var marker := Node2D.new()
+	marker.name = String(support.get("id", "StaffSupport"))
+	marker.position = cell_to_position(cell)
+	unit_layer.add_child(marker)
+
+	var plate := PanelContainer.new()
+	plate.name = "SupportPlate"
+	plate.position = Vector2(8.0, 8.0)
+	plate.size = Vector2(CELL_SIZE - 16.0, CELL_SIZE - 16.0)
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_theme_stylebox_override("panel", make_panel_style(Color(0.08, 0.13, 0.17, 0.88), COLOR_STAFF_SUPPORT, 2))
+	marker.add_child(plate)
+
+	var layout := VBoxContainer.new()
+	layout.alignment = BoxContainer.ALIGNMENT_CENTER
+	layout.add_theme_constant_override("separation", 0)
+	plate.add_child(layout)
+
+	var name_label := make_label(String(support.get("label", "직원")), 12, COLOR_TEXT)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(name_label)
+
+	var role_label := make_label(String(support.get("role", "지원")), 9, COLOR_STAFF_SUPPORT)
+	role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(role_label)
+
+	var hp := int(support.get("hp", 0))
+	var max_hp := int(support.get("max_hp", 1))
+	var hp_label := make_label("%d/%d" % [hp, max_hp], 8, Color.WHITE)
+	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout.add_child(hp_label)
+
+
+func create_objective_marker() -> void:
+	var marker := Node2D.new()
+	marker.name = "ObjectiveDevice"
+	marker.position = cell_to_position(OBJECTIVE_CELL)
+	unit_layer.add_child(marker)
+
+	var device := PanelContainer.new()
+	device.name = "DevicePlate"
+	device.position = Vector2(10.0, 10.0)
+	device.size = Vector2(CELL_SIZE - 20.0, CELL_SIZE - 20.0)
+	device.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	device.add_theme_stylebox_override("panel", make_panel_style(Color(0.06, 0.12, 0.07, 0.88), COLOR_SUCCESS, 2))
+	marker.add_child(device)
+
+	var label := make_label("경보\n장치", 11, COLOR_SUCCESS)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	device.add_child(label)
 
 
 func refresh_highlights() -> void:
@@ -423,12 +551,13 @@ func refresh_highlights() -> void:
 	if not is_player_control_phase():
 		return
 
-	add_cell_highlight(player_cell, COLOR_SELECTED_HIGHLIGHT, "SelectedCell")
+	add_cell_highlight(get_selected_unit_cell(), COLOR_SELECTED_HIGHLIGHT, "SelectedCell")
+	add_cell_outline(OBJECTIVE_CELL, COLOR_SUCCESS, "ObjectiveCell")
 
 	for y in range(GRID_HEIGHT):
 		for x in range(GRID_WIDTH):
 			var cell := Vector2i(x, y)
-			if cell == player_cell:
+			if cell == get_selected_unit_cell():
 				continue
 
 			var enemy_index := get_enemy_index_at_cell(cell)
@@ -563,8 +692,11 @@ func key_to_grid_offset(keycode: Key) -> Vector2i:
 
 func handle_cursor_direction(offset: Vector2i) -> void:
 	if battle_phase == PHASE_CHOOSE_ACTION:
-		if has_moved:
-			update_status("이번 턴에는 이미 이동했습니다.")
+		if has_selected_unit_acted():
+			update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
+			return
+		if has_selected_unit_moved():
+			update_status("%s은 이번 턴에 이미 이동했습니다." % get_selected_unit_label())
 			return
 		enter_move_selection(false)
 
@@ -589,9 +721,35 @@ func confirm_cursor_action() -> void:
 			update_status("먼저 행동 메뉴에서 명령을 선택하세요.")
 
 
+func select_ally_cell(cell: Vector2i) -> void:
+	if cell == player_cell:
+		selected_unit_id = BOSS_UNIT_ID
+		cursor_cell = player_cell
+		refresh_highlights()
+		update_status("사장 선택: 직접 전투 지휘.", false)
+		update_target_info_label(get_selected_unit_info_text())
+		update_action_menu()
+		return
+
+	var staff := get_support_at_cell(cell)
+	if staff.is_empty():
+		return
+
+	selected_unit_id = String(staff.get("id", BOSS_UNIT_ID))
+	cursor_cell = cell
+	refresh_highlights()
+	update_status("%s 선택: 이동/공격 가능." % String(staff.get("label", "직원")), false)
+	update_target_info_label(get_selected_unit_info_text())
+	update_action_menu()
+
+
 func handle_player_cell_action(cell: Vector2i) -> void:
 	if not is_cell_inside(cell):
 		update_status("전투 구역 밖으로는 이동할 수 없습니다.")
+		return
+
+	if battle_phase == PHASE_CHOOSE_ACTION and is_ally_cell(cell):
+		select_ally_cell(cell)
 		return
 
 	match battle_phase:
@@ -608,8 +766,11 @@ func handle_player_cell_action(cell: Vector2i) -> void:
 func _on_move_pressed() -> void:
 	if not is_player_control_phase():
 		return
-	if has_moved:
-		update_status("이번 턴에는 이미 이동했습니다.")
+	if has_selected_unit_acted():
+		update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
+		return
+	if has_selected_unit_moved():
+		update_status("%s은 이번 턴에 이미 이동했습니다." % get_selected_unit_label())
 		return
 
 	enter_move_selection(true)
@@ -618,8 +779,8 @@ func _on_move_pressed() -> void:
 func _on_attack_pressed() -> void:
 	if not is_player_control_phase():
 		return
-	if has_acted:
-		update_status("이번 턴에는 이미 행동했습니다.")
+	if has_selected_unit_acted():
+		update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
 		return
 	if not has_adjacent_enemy():
 		update_status("공격 대상 없음: 기본 공격은 인접한 적에게만 가능합니다.")
@@ -632,28 +793,31 @@ func _on_attack_pressed() -> void:
 func _on_defend_pressed() -> void:
 	if not is_player_control_phase():
 		return
-	if has_acted:
-		update_status("이번 턴에는 이미 행동했습니다.")
+	if has_selected_unit_acted():
+		update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
 		return
 
-	player_defending = true
-	has_acted = true
-	update_status("방어 태세: 다음 피해가 감소합니다.")
-	end_player_turn()
+	set_selected_unit_defending(true)
+	set_selected_unit_acted(true)
+	update_status("%s 방어 태세: 다음 피해가 감소합니다." % get_selected_unit_label())
+	finish_selected_unit_action()
 
 
 func _on_skill_pressed() -> void:
 	if not is_player_control_phase():
 		return
-	if has_acted:
-		update_status("이번 턴에는 이미 행동했습니다.")
+	if selected_unit_id != BOSS_UNIT_ID:
+		update_status("지원 명령은 사장만 사용할 수 있습니다.")
+		return
+	if has_selected_unit_acted():
+		update_status("%s은 이번 턴에 이미 행동했습니다." % get_selected_unit_label())
 		return
 	if skill_used:
-		update_status("이번 전투에서는 이미 스킬을 사용했습니다.")
+		update_status("이번 전투에서는 이미 지원 명령을 사용했습니다.")
 		return
 	if not has_skill_target():
-		update_status("스킬 대상 없음: 사거리 %d칸 안의 적이 없습니다." % PLAYER_SKILL_RANGE)
-		update_target_info_label("스킬 대상 없음\n사거리 %d칸 안의 적이 필요합니다." % PLAYER_SKILL_RANGE)
+		update_status("지원 명령 대상 없음: 사거리 %d칸 안의 적이 없습니다." % PLAYER_SKILL_RANGE)
+		update_target_info_label("지원 명령 대상 없음\n사거리 %d칸 안의 적이 필요합니다." % PLAYER_SKILL_RANGE)
 		return
 
 	enter_skill_selection()
@@ -671,16 +835,16 @@ func _on_wait_pressed() -> void:
 	if not is_player_control_phase():
 		return
 
-	has_acted = true
-	update_status("대기: 턴을 넘깁니다.")
-	end_player_turn()
+	set_selected_unit_acted(true)
+	update_status("%s 대기." % get_selected_unit_label())
+	finish_selected_unit_action()
 
 
 func enter_move_selection(show_prompt: bool) -> void:
 	battle_phase = PHASE_SELECT_MOVE_TILE
 	cursor_cell = get_first_move_target_cell()
 	if show_prompt:
-		update_status("이동할 칸을 선택하세요. 클릭하거나 WASD로 커서 이동 후 Enter/Space로 확정.")
+		update_status("%s 이동할 칸을 선택하세요." % get_selected_unit_label())
 	else:
 		update_status("이동 선택: WASD로 커서 이동, Enter/Space로 확정.", false)
 	refresh_highlights()
@@ -699,7 +863,7 @@ func enter_attack_selection() -> void:
 func enter_skill_selection() -> void:
 	battle_phase = PHASE_SELECT_SKILL_TARGET
 	cursor_cell = get_first_skill_target_cell()
-	update_status("스킬 대상 선택: WASD로 대상 전환, Enter/Space로 확정.")
+	update_status("지원 명령 대상 선택: WASD로 대상 전환, Enter/Space로 확정.")
 	refresh_highlights()
 	update_cursor_status(false)
 	update_action_menu()
@@ -713,37 +877,45 @@ func update_cursor_status(add_to_log: bool) -> void:
 			else:
 				update_status("이동 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
 		PHASE_SELECT_ATTACK_TARGET:
+			var attack_damage := get_selected_unit_attack()
 			if is_attackable_enemy_cell(cursor_cell):
-				update_status("공격 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, PLAYER_ATTACK), add_to_log)
-				update_target_info_label(get_target_info_text(cursor_cell, PLAYER_ATTACK, "공격"))
+				update_status("공격 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, attack_damage), add_to_log)
+				update_target_info_label(get_target_info_text(cursor_cell, attack_damage, "공격"))
 			else:
 				update_status("공격 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
 				update_target_info_label("공격 불가\n인접한 적만 선택할 수 있습니다.")
 		PHASE_SELECT_SKILL_TARGET:
+			var skill_damage := get_player_skill_damage()
 			if is_skill_target_cell(cursor_cell):
-				update_status("스킬 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, PLAYER_SKILL_DAMAGE), add_to_log)
-				update_target_info_label(get_target_info_text(cursor_cell, PLAYER_SKILL_DAMAGE, "스킬"))
+				update_status("지원 명령 대상: %s. Enter/Space로 확정." % get_target_status_text(cursor_cell, skill_damage), add_to_log)
+				update_target_info_label(get_target_info_text(cursor_cell, skill_damage, "지원 명령"))
 			else:
-				update_status("스킬 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
-				update_target_info_label("스킬 불가\n사거리 %d칸 안의 적만 선택할 수 있습니다." % PLAYER_SKILL_RANGE)
+				update_status("지원 명령 불가 칸: %s." % format_cell(cursor_cell), add_to_log)
+				update_target_info_label("지원 명령 불가\n사거리 %d칸 안의 적만 선택할 수 있습니다." % PLAYER_SKILL_RANGE)
 
 
 func try_move_to_cell(cell: Vector2i) -> void:
 	if not is_valid_move_cell(cell):
-		if cell == player_cell:
+		if cell == get_selected_unit_cell():
 			update_status("이미 서 있는 칸입니다.")
+		elif is_obstacle_cell(cell):
+			update_status("잔해와 기둥이 막고 있는 칸입니다.")
+		elif is_support_cell(cell):
+			update_status("지원 직원이 자리 잡은 칸입니다.")
+		elif is_objective_cell(cell):
+			update_status("경보 장치가 있는 목표 칸입니다.")
 		elif is_cell_occupied(cell):
 			update_status("이미 점유된 칸입니다.")
 		else:
 			update_status("이동 범위를 벗어났습니다.")
 		return
 
-	player_cell = cell
-	cursor_cell = player_cell
-	has_moved = true
+	set_selected_unit_cell(cell)
+	cursor_cell = cell
+	set_selected_unit_moved(true)
 	battle_phase = PHASE_CHOOSE_ACTION
 	update_units()
-	update_status("보스를 이동했습니다. 다음 행동을 선택하세요.")
+	update_status("%s 이동 완료. 다음 행동을 선택하세요." % get_selected_unit_label())
 	update_action_menu()
 
 
@@ -756,26 +928,26 @@ func try_attack_cell(cell: Vector2i) -> void:
 		update_status("공격하려면 인접한 적을 선택해야 합니다.")
 		return
 
-	has_acted = true
+	set_selected_unit_acted(true)
 	player_attack(enemy_index)
 	if battle_phase == PHASE_SELECT_ATTACK_TARGET:
-		end_player_turn()
+		finish_selected_unit_action()
 
 
 func try_skill_cell(cell: Vector2i) -> void:
 	var enemy_index := get_enemy_index_at_cell(cell)
 	if enemy_index == -1:
-		update_status("스킬 대상을 선택하세요.")
+		update_status("지원 명령 대상을 선택하세요.")
 		return
 	if not is_skill_target_cell(cell):
-		update_status("스킬 사거리를 벗어난 대상입니다.")
+		update_status("지원 명령 사거리를 벗어난 대상입니다.")
 		return
 
-	has_acted = true
+	set_selected_unit_acted(true)
 	skill_used = true
 	player_skill(enemy_index)
 	if battle_phase == PHASE_SELECT_SKILL_TARGET:
-		end_player_turn()
+		finish_selected_unit_action()
 
 
 func cancel_action_selection() -> void:
@@ -786,7 +958,7 @@ func cancel_action_selection() -> void:
 		return
 
 	battle_phase = PHASE_CHOOSE_ACTION
-	cursor_cell = player_cell
+	cursor_cell = get_selected_unit_cell()
 	update_status("선택을 취소했습니다. 행동을 다시 선택하세요.")
 	refresh_highlights()
 	update_action_menu()
@@ -794,14 +966,16 @@ func cancel_action_selection() -> void:
 
 func player_attack(enemy_index: int) -> void:
 	var enemy: Dictionary = enemies[enemy_index]
-	var next_hp := int(enemy.get("hp", 0)) - PLAYER_ATTACK
+	var attack_damage := get_selected_unit_attack()
+	var attacker_label := get_selected_unit_label()
+	var next_hp := int(enemy.get("hp", 0)) - attack_damage
 	enemy["hp"] = next_hp
 	if next_hp <= 0:
 		var defeated_label := String(enemy.get("label", "적"))
 		enemies.remove_at(enemy_index)
-		update_status("%s 제압." % defeated_label)
+		update_status("%s: %s 제압." % [attacker_label, defeated_label])
 	else:
-		update_status("%s에게 피해 %d." % [String(enemy.get("label", "적")), PLAYER_ATTACK])
+		update_status("%s: %s에게 피해 %d." % [attacker_label, String(enemy.get("label", "적")), attack_damage])
 
 	update_units()
 	if enemies.is_empty():
@@ -810,14 +984,15 @@ func player_attack(enemy_index: int) -> void:
 
 func player_skill(enemy_index: int) -> void:
 	var enemy: Dictionary = enemies[enemy_index]
-	var next_hp := int(enemy.get("hp", 0)) - PLAYER_SKILL_DAMAGE
+	var skill_damage := get_player_skill_damage()
+	var next_hp := int(enemy.get("hp", 0)) - skill_damage
 	enemy["hp"] = next_hp
 	if next_hp <= 0:
 		var defeated_label := String(enemy.get("label", "적"))
 		enemies.remove_at(enemy_index)
-		update_status("현장 명령으로 %s 제압." % defeated_label)
+		update_status("멜타 지원 명령으로 %s 제압." % defeated_label)
 	else:
-		update_status("현장 명령: %s에게 피해 %d." % [String(enemy.get("label", "적")), PLAYER_SKILL_DAMAGE])
+		update_status("멜타 지원 명령: %s에게 피해 %d." % [String(enemy.get("label", "적")), skill_damage])
 
 	update_units()
 	if enemies.is_empty():
@@ -829,10 +1004,55 @@ func start_player_turn(message: String) -> void:
 	has_moved = false
 	has_acted = false
 	player_defending = false
-	cursor_cell = player_cell
+	for index in range(staff_units.size()):
+		staff_units[index]["moved"] = false
+		staff_units[index]["acted"] = false
+		staff_units[index]["defending"] = false
+	selected_unit_id = BOSS_UNIT_ID
+	cursor_cell = get_selected_unit_cell()
 	update_units()
 	update_status(message)
 	update_action_menu()
+
+
+func finish_selected_unit_action() -> void:
+	if battle_phase == PHASE_VICTORY or battle_phase == PHASE_DEFEAT:
+		return
+	if all_ally_actions_finished():
+		end_player_turn()
+		return
+
+	battle_phase = PHASE_CHOOSE_ACTION
+	var previous_label := get_selected_unit_label()
+	select_next_ready_unit()
+	update_units()
+	update_status("%s 행동 완료. 다음 아군: %s" % [previous_label, get_selected_unit_label()])
+	update_action_menu()
+
+
+func all_ally_actions_finished() -> bool:
+	if not has_acted:
+		return false
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff) and not bool(staff.get("acted", false)):
+			return false
+	return true
+
+
+func select_next_ready_unit() -> void:
+	if not has_acted:
+		selected_unit_id = BOSS_UNIT_ID
+		cursor_cell = player_cell
+		return
+
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff) and not bool(staff.get("acted", false)):
+			selected_unit_id = String(staff.get("id", BOSS_UNIT_ID))
+			cursor_cell = staff.get("cell", player_cell)
+			return
+
+	selected_unit_id = BOSS_UNIT_ID
+	cursor_cell = player_cell
 
 
 func end_player_turn() -> void:
@@ -844,27 +1064,53 @@ func end_player_turn() -> void:
 	update_action_menu()
 	refresh_highlights()
 	await get_tree().create_timer(0.25).timeout
-	run_enemy_turn()
+	await run_enemy_turn()
 
 
 func run_enemy_turn() -> void:
 	var messages: Array[String] = []
 	for enemy: Dictionary in enemies:
-		if get_cell_distance(enemy.get("cell", Vector2i.ZERO), player_cell) == 1:
+		var message := ""
+		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+		var target_cell := get_nearest_ally_cell(enemy_cell)
+		if target_cell == INVALID_CELL:
+			break
+
+		if get_cell_distance(enemy_cell, target_cell) == 1:
 			var attack_power := int(enemy.get("attack", 1))
-			if player_defending:
-				attack_power = maxi(1, attack_power - 1)
-			player_hp -= attack_power
-			var defense_note := " (방어)" if player_defending else ""
-			messages.append("%s: 보스에게 %d 피해%s" % [String(enemy.get("label", "적")), attack_power, defense_note])
+			var target_label := get_ally_label_at_cell(target_cell)
+			var reductions: Array[String] = []
+			var support_reduction := get_staff_defense_bonus(target_cell)
+			if support_reduction > 0:
+				attack_power -= support_reduction
+				reductions.append("그릭 지원")
+			if is_ally_defending(target_cell):
+				attack_power -= 1
+				reductions.append("방어")
+			attack_power = maxi(1, attack_power)
+			apply_damage_to_ally(target_cell, attack_power)
+			var defense_note := ""
+			if not reductions.is_empty():
+				defense_note = " (%s)" % " + ".join(reductions)
+			message = "%s: %s에게 %d 피해%s" % [
+				String(enemy.get("label", "적")),
+				target_label,
+				attack_power,
+				defense_note
+			]
 		else:
 			var before_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
 			var next_cell := get_enemy_step_toward_player(enemy)
 			enemy["cell"] = next_cell
 			if next_cell == before_cell:
-				messages.append("%s: 대기" % String(enemy.get("label", "적")))
+				message = "%s: 대기" % String(enemy.get("label", "적"))
 			else:
-				messages.append("%s: 접근 (%d,%d)" % [String(enemy.get("label", "적")), next_cell.x + 1, next_cell.y + 1])
+				message = "%s: 접근 (%d,%d)" % [String(enemy.get("label", "적")), next_cell.x + 1, next_cell.y + 1]
+
+		messages.append(message)
+		update_units()
+		update_status("적 행동: %s" % message, false)
+		await get_tree().create_timer(0.28).timeout
 
 		if player_hp <= 0:
 			break
@@ -900,31 +1146,33 @@ func is_player_control_phase() -> bool:
 func is_valid_move_cell(cell: Vector2i) -> bool:
 	if not is_cell_inside(cell):
 		return false
-	if cell == player_cell:
+	if cell == get_selected_unit_cell():
 		return false
 	if is_cell_occupied(cell):
 		return false
-	return get_cell_distance(player_cell, cell) <= PLAYER_MOVE_RANGE
+	return get_cell_distance(get_selected_unit_cell(), cell) <= get_selected_unit_move_range()
 
 
 func is_attackable_enemy_cell(cell: Vector2i) -> bool:
-	return get_enemy_index_at_cell(cell) != -1 and get_cell_distance(player_cell, cell) == 1
+	return get_enemy_index_at_cell(cell) != -1 and get_cell_distance(get_selected_unit_cell(), cell) == 1
 
 
 func is_skill_target_cell(cell: Vector2i) -> bool:
-	return get_enemy_index_at_cell(cell) != -1 and get_cell_distance(player_cell, cell) <= PLAYER_SKILL_RANGE
+	return selected_unit_id == BOSS_UNIT_ID and get_enemy_index_at_cell(cell) != -1 and get_cell_distance(get_selected_unit_cell(), cell) <= PLAYER_SKILL_RANGE
 
 
 func has_adjacent_enemy() -> bool:
 	for enemy: Dictionary in enemies:
-		if get_cell_distance(player_cell, enemy.get("cell", Vector2i.ZERO)) == 1:
+		if get_cell_distance(get_selected_unit_cell(), enemy.get("cell", Vector2i.ZERO)) == 1:
 			return true
 	return false
 
 
 func has_skill_target() -> bool:
+	if selected_unit_id != BOSS_UNIT_ID:
+		return false
 	for enemy: Dictionary in enemies:
-		if get_cell_distance(player_cell, enemy.get("cell", Vector2i.ZERO)) <= PLAYER_SKILL_RANGE:
+		if get_cell_distance(get_selected_unit_cell(), enemy.get("cell", Vector2i.ZERO)) <= PLAYER_SKILL_RANGE:
 			return true
 	return false
 
@@ -939,16 +1187,20 @@ func get_first_move_target_cell() -> Vector2i:
 		Vector2i(0, 2),
 		Vector2i(0, -2),
 		Vector2i(-2, 0),
+		Vector2i(3, 0),
+		Vector2i(0, 3),
+		Vector2i(0, -3),
+		Vector2i(-3, 0),
 		Vector2i(1, 1),
 		Vector2i(1, -1),
 		Vector2i(-1, 1),
 		Vector2i(-1, -1)
 	]
 	for offset: Vector2i in preferred_offsets:
-		var candidate := player_cell + offset
+		var candidate := get_selected_unit_cell() + offset
 		if is_valid_move_cell(candidate):
 			return candidate
-	return player_cell
+	return get_selected_unit_cell()
 
 
 func get_first_attack_target_cell() -> Vector2i:
@@ -956,7 +1208,7 @@ func get_first_attack_target_cell() -> Vector2i:
 		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
 		if is_attackable_enemy_cell(enemy_cell):
 			return enemy_cell
-	return player_cell
+	return get_selected_unit_cell()
 
 
 func get_first_skill_target_cell() -> Vector2i:
@@ -964,7 +1216,7 @@ func get_first_skill_target_cell() -> Vector2i:
 		var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
 		if is_skill_target_cell(enemy_cell):
 			return enemy_cell
-	return player_cell
+	return get_selected_unit_cell()
 
 
 func get_attack_target_cells() -> Array[Vector2i]:
@@ -1061,40 +1313,40 @@ func update_action_menu() -> void:
 		return
 
 	var can_choose := is_player_control_phase()
-	move_button.disabled = not can_choose or has_moved
-	attack_button.disabled = not can_choose or has_acted
-	defend_button.disabled = not can_choose or has_acted
-	skill_button.disabled = not can_choose or has_acted or skill_used
+	move_button.disabled = not can_choose or has_selected_unit_moved() or has_selected_unit_acted()
+	attack_button.disabled = not can_choose or has_selected_unit_acted()
+	defend_button.disabled = not can_choose or has_selected_unit_acted()
+	skill_button.disabled = not can_choose or selected_unit_id != BOSS_UNIT_ID or has_selected_unit_acted() or skill_used
 	flee_button.disabled = not can_choose
 	wait_button.disabled = not can_choose
 
 	move_button.text = "이동 선택 중" if battle_phase == PHASE_SELECT_MOVE_TILE else "이동"
 	attack_button.text = "공격 선택 중" if battle_phase == PHASE_SELECT_ATTACK_TARGET else "공격"
-	skill_button.text = "스킬 선택 중" if battle_phase == PHASE_SELECT_SKILL_TARGET else "스킬"
+	skill_button.text = "지원 선택 중" if battle_phase == PHASE_SELECT_SKILL_TARGET else "지원 명령"
 	defend_button.text = "방어"
 	flee_button.text = "철수"
 	wait_button.text = "대기"
 
 	match battle_phase:
 		PHASE_CHOOSE_ACTION:
-			action_detail_label.text = "명령을 선택하세요. 이동 후에도 행동을 한 번 더 고를 수 있습니다."
+			action_detail_label.text = "%s 명령을 선택하세요. 다른 아군을 클릭해 전환할 수 있습니다." % get_selected_unit_label()
 			if has_adjacent_enemy():
 				update_target_info_label("공격 가능\n인접한 적이 있습니다.")
 			elif has_skill_target() and not skill_used:
-				update_target_info_label("스킬 가능\n사거리 %d칸 안의 적이 있습니다." % PLAYER_SKILL_RANGE)
+				update_target_info_label("지원 명령 가능\n사거리 %d칸 안의 적이 있습니다." % PLAYER_SKILL_RANGE)
 			else:
-				update_target_info_label("대상 정보 없음\n공격은 인접, 스킬은 %d칸 사거리입니다." % PLAYER_SKILL_RANGE)
+				update_target_info_label(get_selected_unit_info_text())
 			prompt_label.text = "아군 턴: 행동 선택"
 		PHASE_SELECT_MOVE_TILE:
-			action_detail_label.text = "파란 칸을 클릭하거나 WASD로 커서 이동 후 Enter/Space로 확정."
-			update_target_info_label("이동 선택 중\n파란 칸만 이동할 수 있습니다.")
+			action_detail_label.text = "%s 이동 칸을 선택합니다." % get_selected_unit_label()
+			update_target_info_label("이동 선택 중\n장애물, 목표물, 유닛 칸은 이동 불가.")
 			prompt_label.text = "아군 턴: 이동 칸 선택"
 		PHASE_SELECT_ATTACK_TARGET:
 			action_detail_label.text = "빨간 적 대상 중 WASD로 전환, Enter/Space로 확정."
 			prompt_label.text = "아군 턴: 공격 대상 선택"
 		PHASE_SELECT_SKILL_TARGET:
-			action_detail_label.text = "청록 적 대상 중 WASD로 전환, Enter/Space로 확정. 전투당 1회."
-			prompt_label.text = "아군 턴: 스킬 대상 선택"
+			action_detail_label.text = "청록 적 대상 중 WASD로 전환, Enter/Space로 확정. 멜타 지원으로 피해가 증가합니다."
+			prompt_label.text = "아군 턴: 지원 명령 대상 선택"
 		PHASE_ENEMY_TURN:
 			action_detail_label.text = "적이 행동 중입니다."
 			update_target_info_label("대상 정보 없음")
@@ -1118,7 +1370,7 @@ func get_phase_label() -> String:
 		PHASE_SELECT_ATTACK_TARGET:
 			return "아군 턴: 공격 선택"
 		PHASE_SELECT_SKILL_TARGET:
-			return "아군 턴: 스킬 선택"
+			return "아군 턴: 지원 선택"
 		PHASE_ENEMY_TURN:
 			return "적 턴"
 		PHASE_VICTORY:
@@ -1129,24 +1381,64 @@ func get_phase_label() -> String:
 
 
 func get_enemy_step_toward_player(enemy: Dictionary) -> Vector2i:
-	var enemy_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
+	var start_cell: Vector2i = enemy.get("cell", Vector2i.ZERO)
 	var enemy_id := String(enemy.get("id", ""))
-	var candidates: Array[Vector2i] = []
+	var chase_target := get_nearest_ally_cell(start_cell)
+	if chase_target == INVALID_CELL:
+		return start_cell
 
-	if player_cell.x != enemy_cell.x:
-		candidates.append(enemy_cell + Vector2i(signi(player_cell.x - enemy_cell.x), 0))
-	if player_cell.y != enemy_cell.y:
-		candidates.append(enemy_cell + Vector2i(0, signi(player_cell.y - enemy_cell.y)))
+	var frontier: Array[Vector2i] = [start_cell]
+	var came_from: Dictionary = {
+		start_cell: INVALID_CELL
+	}
+	var target_cell := INVALID_CELL
 
-	for candidate: Vector2i in candidates:
-		if is_cell_inside(candidate) and not is_cell_blocked_for_enemy(candidate, enemy_id):
-			return candidate
+	while not frontier.is_empty():
+		var current: Vector2i = frontier.pop_front()
+		if current != start_cell and get_cell_distance(current, chase_target) == 1:
+			target_cell = current
+			break
 
-	return enemy_cell
+		for direction: Vector2i in get_cardinal_directions_toward_target(current, chase_target):
+			var next_cell := current + direction
+			if not is_cell_inside(next_cell):
+				continue
+			if came_from.has(next_cell):
+				continue
+			if is_cell_blocked_for_enemy(next_cell, enemy_id):
+				continue
+			came_from[next_cell] = current
+			frontier.append(next_cell)
+
+	if target_cell == INVALID_CELL:
+		return start_cell
+
+	var step := target_cell
+	while came_from.get(step, INVALID_CELL) != start_cell:
+		step = came_from.get(step, start_cell)
+	return step
+
+
+func get_cardinal_directions_toward_target(from_cell: Vector2i, target_cell: Vector2i) -> Array[Vector2i]:
+	var directions: Array[Vector2i] = []
+	var horizontal := signi(target_cell.x - from_cell.x)
+	var vertical := signi(target_cell.y - from_cell.y)
+	if horizontal != 0:
+		directions.append(Vector2i(horizontal, 0))
+	if vertical != 0:
+		directions.append(Vector2i(0, vertical))
+
+	for fallback: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if not directions.has(fallback):
+			directions.append(fallback)
+
+	return directions
 
 
 func is_cell_blocked_for_enemy(cell: Vector2i, moving_enemy_id: String) -> bool:
 	if cell == player_cell:
+		return true
+	if is_obstacle_cell(cell) or is_support_cell(cell) or is_objective_cell(cell):
 		return true
 
 	for enemy: Dictionary in enemies:
@@ -1175,14 +1467,16 @@ func resolve_victory() -> void:
 
 
 func restart_battle() -> void:
-	player_cell = Vector2i(0, 2)
+	player_cell = Vector2i(0, 3)
 	player_hp = PLAYER_MAX_HP
+	selected_unit_id = BOSS_UNIT_ID
 	battle_phase = PHASE_CHOOSE_ACTION
 	has_moved = false
 	has_acted = false
 	player_defending = false
 	skill_used = false
 	action_log.clear()
+	setup_staff_units()
 	setup_enemies()
 	return_button.text = "현장 복귀"
 	return_button.disabled = true
@@ -1219,8 +1513,16 @@ func update_hud() -> void:
 		return
 
 	var enemy_count := enemies.size()
+	var staff_count := get_alive_staff_count()
 	var turn_text := get_phase_label()
-	hp_label.text = "보스 HP %d/%d | 적 %d | %s" % [player_hp, PLAYER_MAX_HP, enemy_count, turn_text]
+	hp_label.text = "선택 %s | 보스 HP %d/%d | 직원 %d | 적 %d | %s" % [
+		get_selected_unit_label(),
+		player_hp,
+		PLAYER_MAX_HP,
+		staff_count,
+		enemy_count,
+		turn_text
+	]
 
 
 func get_battle_bonus_text() -> String:
@@ -1265,7 +1567,236 @@ func is_cell_inside(cell: Vector2i) -> bool:
 func is_cell_occupied(cell: Vector2i) -> bool:
 	if cell == player_cell:
 		return true
+	if is_obstacle_cell(cell) or is_support_cell(cell) or is_objective_cell(cell):
+		return true
 	return get_enemy_index_at_cell(cell) != -1
+
+
+func is_obstacle_cell(cell: Vector2i) -> bool:
+	return OBSTACLE_CELLS.has(cell)
+
+
+func is_objective_cell(cell: Vector2i) -> bool:
+	return cell == OBJECTIVE_CELL
+
+
+func is_support_cell(cell: Vector2i) -> bool:
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff) and staff.get("cell", Vector2i.ZERO) == cell:
+			return true
+	return false
+
+
+func get_support_at_cell(cell: Vector2i) -> Dictionary:
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff) and staff.get("cell", Vector2i.ZERO) == cell:
+			return staff
+	return {}
+
+
+func is_ally_cell(cell: Vector2i) -> bool:
+	return cell == player_cell or is_support_cell(cell)
+
+
+func get_nearest_ally_cell(from_cell: Vector2i) -> Vector2i:
+	var candidates: Array[Vector2i] = []
+	if player_hp > 0:
+		candidates.append(player_cell)
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff):
+			candidates.append(staff.get("cell", Vector2i.ZERO))
+
+	if candidates.is_empty():
+		return INVALID_CELL
+
+	var best_cell := candidates[0]
+	var best_distance := get_cell_distance(from_cell, best_cell)
+	for candidate: Vector2i in candidates:
+		var distance := get_cell_distance(from_cell, candidate)
+		if distance < best_distance:
+			best_cell = candidate
+			best_distance = distance
+	return best_cell
+
+
+func get_ally_label_at_cell(cell: Vector2i) -> String:
+	if cell == player_cell:
+		return "사장"
+	var staff := get_support_at_cell(cell)
+	return String(staff.get("label", "아군"))
+
+
+func is_ally_defending(cell: Vector2i) -> bool:
+	if cell == player_cell:
+		return player_defending
+	var staff_index := get_staff_index_at_cell(cell)
+	if staff_index == -1:
+		return false
+	return bool(staff_units[staff_index].get("defending", false))
+
+
+func apply_damage_to_ally(cell: Vector2i, damage: int) -> void:
+	if cell == player_cell:
+		player_hp = maxi(0, player_hp - damage)
+		return
+
+	var staff_index := get_staff_index_at_cell(cell)
+	if staff_index != -1:
+		var current_hp := int(staff_units[staff_index].get("hp", 0))
+		staff_units[staff_index]["hp"] = maxi(0, current_hp - damage)
+
+
+func get_selected_unit_cell() -> Vector2i:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return player_cell
+	var staff := get_staff_by_id(selected_unit_id)
+	return staff.get("cell", player_cell)
+
+
+func set_selected_unit_cell(cell: Vector2i) -> void:
+	if selected_unit_id == BOSS_UNIT_ID:
+		player_cell = cell
+		return
+	var staff_index := get_staff_index_by_id(selected_unit_id)
+	if staff_index != -1:
+		staff_units[staff_index]["cell"] = cell
+
+
+func get_selected_unit_label() -> String:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return "사장"
+	var staff := get_staff_by_id(selected_unit_id)
+	return String(staff.get("label", "직원"))
+
+
+func get_selected_unit_attack() -> int:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return PLAYER_ATTACK
+	var staff := get_staff_by_id(selected_unit_id)
+	return int(staff.get("attack", 1))
+
+
+func get_selected_unit_move_range() -> int:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return PLAYER_MOVE_RANGE
+	var staff := get_staff_by_id(selected_unit_id)
+	return int(staff.get("move_range", 1))
+
+
+func has_selected_unit_moved() -> bool:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return has_moved
+	var staff := get_staff_by_id(selected_unit_id)
+	return bool(staff.get("moved", false))
+
+
+func set_selected_unit_moved(value: bool) -> void:
+	if selected_unit_id == BOSS_UNIT_ID:
+		has_moved = value
+		return
+	var staff_index := get_staff_index_by_id(selected_unit_id)
+	if staff_index != -1:
+		staff_units[staff_index]["moved"] = value
+
+
+func has_selected_unit_acted() -> bool:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return has_acted
+	var staff := get_staff_by_id(selected_unit_id)
+	return bool(staff.get("acted", false))
+
+
+func set_selected_unit_acted(value: bool) -> void:
+	if selected_unit_id == BOSS_UNIT_ID:
+		has_acted = value
+		return
+	var staff_index := get_staff_index_by_id(selected_unit_id)
+	if staff_index != -1:
+		staff_units[staff_index]["acted"] = value
+
+
+func set_selected_unit_defending(value: bool) -> void:
+	if selected_unit_id == BOSS_UNIT_ID:
+		player_defending = value
+		return
+	var staff_index := get_staff_index_by_id(selected_unit_id)
+	if staff_index != -1:
+		staff_units[staff_index]["defending"] = value
+
+
+func get_selected_unit_info_text() -> String:
+	if selected_unit_id == BOSS_UNIT_ID:
+		return "사장\nHP %d/%d | 공격 %d | 이동 %d" % [player_hp, PLAYER_MAX_HP, PLAYER_ATTACK, PLAYER_MOVE_RANGE]
+	var staff := get_staff_by_id(selected_unit_id)
+	return "%s / %s\nHP %d/%d | 공격 %d | 이동 %d\n%s" % [
+		String(staff.get("label", "직원")),
+		String(staff.get("role", "지원")),
+		int(staff.get("hp", 0)),
+		int(staff.get("max_hp", 1)),
+		int(staff.get("attack", 1)),
+		int(staff.get("move_range", 1)),
+		String(staff.get("note", ""))
+	]
+
+
+func get_staff_by_id(staff_id: String) -> Dictionary:
+	for staff: Dictionary in staff_units:
+		if String(staff.get("id", "")) == staff_id:
+			return staff
+	return {}
+
+
+func get_staff_index_by_id(staff_id: String) -> int:
+	for index in range(staff_units.size()):
+		if String(staff_units[index].get("id", "")) == staff_id:
+			return index
+	return -1
+
+
+func get_staff_index_at_cell(cell: Vector2i) -> int:
+	for index in range(staff_units.size()):
+		if is_staff_alive(staff_units[index]) and staff_units[index].get("cell", Vector2i.ZERO) == cell:
+			return index
+	return -1
+
+
+func is_staff_alive(staff: Dictionary) -> bool:
+	return int(staff.get("hp", 0)) > 0
+
+
+func get_alive_staff_count() -> int:
+	var count := 0
+	for staff: Dictionary in staff_units:
+		if is_staff_alive(staff):
+			count += 1
+	return count
+
+
+func get_support_summary() -> String:
+	var summaries: Array[String] = []
+	for support: Dictionary in staff_units:
+		if is_staff_alive(support):
+			summaries.append("%s: %s" % [String(support.get("label", "직원")), String(support.get("note", "지원"))])
+	return " / ".join(summaries)
+
+
+func get_staff_defense_bonus(target_cell: Vector2i) -> int:
+	if target_cell == player_cell and has_support_id("greek_support"):
+		return SUPPORT_DEFENSE_REDUCTION
+	return 0
+
+
+func get_player_skill_damage() -> int:
+	if has_support_id("melta_support"):
+		return PLAYER_SKILL_DAMAGE + SUPPORT_SKILL_DAMAGE_BONUS
+	return PLAYER_SKILL_DAMAGE
+
+
+func has_support_id(support_id: String) -> bool:
+	for support: Dictionary in staff_units:
+		if is_staff_alive(support) and String(support.get("id", "")) == support_id:
+			return true
+	return false
 
 
 func get_enemy_index_at_cell(cell: Vector2i) -> int:
