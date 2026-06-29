@@ -1081,15 +1081,15 @@ func refresh_contract_board() -> void:
 		var button := contract_buttons[index]
 		var contract_id := String(button.get_meta("contract_id", ""))
 		var contract := GameState.get_contract_by_id(contract_id)
-		var tasks: Array = contract.get("tasks", [])
 		var focused := index == focused_contract_index
 		var selected := contract_id == selected_id
 		var state_text := "선택됨" if selected else ("검토 중" if focused else "접수")
-		button.text = "%s\n%s\n%s / 작업 %d개" % [
+		button.text = "%s\n%s\n%s / 작업량 %s\n%s" % [
 			String(contract.get("title", "의뢰")),
 			String(contract.get("location", "현장")),
 			state_text,
-			tasks.size()
+			GameState.get_contract_workload_hint(contract),
+			GameState.get_contract_primary_intel_hint(contract)
 		]
 		UiAssetStyles.apply_contract_card_style(button, focused or selected)
 
@@ -1157,23 +1157,28 @@ func get_assignment_detail_text() -> String:
 		lines.append("선택 의뢰")
 		lines.append("  아직 선택된 의뢰가 없습니다.")
 	else:
-		var primary_stat := GameState.get_contract_primary_stat(selected_contract)
-		var team_score := GameState.calculate_assignment_score(primary_stat)
-		var required_score := GameState.get_contract_required_score(selected_contract)
 		lines.append("선택 의뢰")
 		lines.append("  %s" % String(selected_contract.get("title", "의뢰")))
 		lines.append("  %s" % String(selected_contract.get("location", "현장")))
-		lines.append("  필요 능력: %s %d/%d" % [
-			GameState.get_stat_name(primary_stat),
-			team_score,
-			required_score
+		lines.append("  작업량: %s / 난도: %s" % [
+			GameState.get_contract_workload_hint(selected_contract),
+			GameState.get_contract_difficulty_hint(selected_contract)
 		])
+		lines.append("  단서: %s" % GameState.get_contract_primary_intel_hint(selected_contract))
 
 	lines.append("")
 	lines.append("편성 요약")
 	lines.append("  직원: %s" % GameState.get_selected_staff_names_text())
 	lines.append("  장비: %s" % GameState.get_selected_gear_names_text())
 	lines.append("  장비 비용: %d" % GameState.get_selected_gear_cost())
+	if not selected_contract.is_empty():
+		lines.append("")
+		lines.append("대응 상태")
+		var coverage_lines := GameState.get_contract_assignment_coverage_lines(selected_contract)
+		for index in range(mini(3, coverage_lines.size())):
+			lines.append("  %s" % String(coverage_lines[index]))
+		if coverage_lines.size() > 3:
+			lines.append("  외 %d개 대응" % (coverage_lines.size() - 3))
 
 	var blocker := GameState.get_dispatch_blocker()
 	lines.append("")
@@ -1241,25 +1246,37 @@ func refresh_settlement_report() -> void:
 	var location := String(report.get("location", ""))
 	var completed_count := int(report.get("completed_count", 0))
 	var total_count := int(report.get("total_count", 0))
+	var contract_grade := String(report.get("contract_grade", "B"))
+	var task_grade_counts_text := String(report.get("task_grade_counts_text", "우수 0 / 보통 0 / 미흡 0"))
+	var key_reason_lines: Array = report.get("key_reason_lines", [])
 	var battle_resolved := bool(report.get("battle_resolved", false))
-	var battle_text := String(report.get("battle_report", ""))
 	var before: Dictionary = report.get("before", {})
 	var after: Dictionary = report.get("after", {})
 	var reward: Dictionary = report.get("reward", {})
 	var assignment_lines: Array = report.get("assignment_lines", [])
+	var assignment_coverage_lines: Array = report.get("assignment_coverage_lines", [])
+	var field_feedback_lines: Array = report.get("field_feedback_lines", [])
 	var staff_changes: Array = report.get("staff_changes", [])
 
 	settlement_title_label.text = "%s / %s" % [contract_title, location]
-	settlement_result_label.text = "\n".join([
-		"현장 작업  %d/%d 완료" % [completed_count, total_count],
-		"전투 이벤트  %s" % ("해결" if battle_resolved else "없음 또는 미해결"),
-		"전투 보고  %s" % compact_report_text(battle_text, "기록 없음", 34)
-	])
+	var result_lines: Array[String] = [
+		"계약 결과  %s" % contract_grade,
+		"작업  %d/%d 완료" % [completed_count, total_count],
+		"판정  %s" % task_grade_counts_text,
+		"전투  %s" % ("해결" if battle_resolved else "없음")
+	]
+	for reason in key_reason_lines:
+		result_lines.append("원인  %s" % compact_report_text(String(reason), "", 30))
+	settlement_result_label.text = compact_lines(result_lines, 6, 42)
 
 	if assignment_lines.is_empty():
 		settlement_assignment_label.text = "편성 기록 없음"
 	else:
-		settlement_assignment_label.text = compact_lines(assignment_lines, 7, 44)
+		settlement_assignment_label.text = get_settlement_assignment_report_text(
+			field_feedback_lines,
+			assignment_coverage_lines,
+			assignment_lines
+		)
 
 	settlement_changes_label.text = "\n".join([
 		format_settlement_change("자금", "money", before, after, reward),
@@ -1280,6 +1297,28 @@ func format_settlement_change(label: String, key: String, before: Dictionary, af
 	var after_value := int(after.get(key, 0))
 	var delta := int(reward.get(key, after_value - before_value))
 	return "%s  %d -> %d (%s)" % [label, before_value, after_value, GameState.format_delta(delta)]
+
+
+func get_settlement_assignment_report_text(field_feedback_lines: Array, assignment_coverage_lines: Array, assignment_lines: Array) -> String:
+	var lines: Array[String] = []
+	if not field_feedback_lines.is_empty():
+		lines.append("예상 대비")
+		for feedback_line in field_feedback_lines:
+			lines.append("  %s" % compact_report_text(String(feedback_line), "", 34))
+
+	if not assignment_coverage_lines.is_empty():
+		if not lines.is_empty():
+			lines.append("")
+		lines.append("대응 상태")
+		for coverage_line in assignment_coverage_lines:
+			lines.append("  %s" % compact_report_text(String(coverage_line), "", 34))
+
+	if not lines.is_empty():
+		lines.append("")
+	lines.append("편성")
+	for assignment_line in assignment_lines:
+		lines.append("  %s" % compact_report_text(String(assignment_line), "", 34))
+	return compact_lines(lines, 10, 44)
 
 
 func compact_lines(raw_lines: Array, max_lines: int, max_chars: int) -> String:
@@ -1305,13 +1344,15 @@ func compact_report_text(text: String, fallback: String, max_chars: int) -> Stri
 
 
 func get_contract_detail_text(contract: Dictionary) -> String:
-	var tasks: Array = contract.get("tasks", [])
-	return "%s\n%s\n\n의뢰처: %s\n현장: %s\n작업: %d개\n보상: %s" % [
+	var intel_lines := GameState.get_contract_intel_lines(contract)
+	var uncertainty_lines := GameState.get_contract_uncertainty_lines(contract)
+	return "%s\n%s\n\n의뢰처: %s\n현장: %s\n단서:\n  %s\n불확실:\n  %s\n보상: %s" % [
 		String(contract.get("title", "의뢰")),
 		String(contract.get("summary", "")),
 		String(contract.get("client", "")),
 		String(contract.get("location", "")),
-		tasks.size(),
+		"\n  ".join(intel_lines),
+		"\n  ".join(uncertainty_lines),
 		GameState.get_reward_text(contract)
 	]
 

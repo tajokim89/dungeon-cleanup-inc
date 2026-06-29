@@ -499,24 +499,32 @@ func complete_task(task_name: String, target: Interactable) -> void:
 		return
 
 	var action_text := target.action
+	var task: Dictionary = task_data_by_id.get(task_name, {})
 	task_completed[task_name] = true
 	completed_task_count += 1
 	target.action = "%s은 이미 처리했습니다." % target.label
-	GameState.mark_field_task_completed(task_name)
+	var task_result := GameState.complete_field_task(task)
 
 	apply_task_completed_visual(task_name, target.label)
-	status_label.text = get_task_completion_status_text(task_name, target.label, action_text)
+	status_label.text = get_task_completion_status_text(task_name, target.label, action_text, task_result)
 	update_progress_label()
 
 	prompt_label.text = get_next_field_prompt_text()
 
 
-func get_task_completion_status_text(task_name: String, task_label: String, action_text: String) -> String:
-	var task: Dictionary = task_data_by_id.get(task_name, {})
-	var effect_summary := get_task_effect_summary(task)
-	if effect_summary.is_empty():
+func get_task_completion_status_text(task_name: String, task_label: String, action_text: String, task_result: Dictionary = {}) -> String:
+	if task_result.is_empty():
+		var task: Dictionary = task_data_by_id.get(task_name, {})
+		var effect_summary := get_task_effect_summary(task)
+		if effect_summary.is_empty():
+			return "%s 완료: %s" % [task_label, action_text]
+		return "%s 완료 | 효과: %s" % [task_label, effect_summary]
+
+	var grade_label := String(task_result.get("grade_label", "보통"))
+	var reason := String(task_result.get("reason", "")).strip_edges()
+	if reason.is_empty():
 		return "%s 완료: %s" % [task_label, action_text]
-	return "%s 완료 | 효과: %s" % [task_label, effect_summary]
+	return "%s 완료 | %s: %s" % [task_label, grade_label, reason]
 
 
 func get_task_effect_summary(task: Dictionary) -> String:

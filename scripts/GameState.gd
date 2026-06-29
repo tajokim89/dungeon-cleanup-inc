@@ -202,6 +202,7 @@ var last_report: String = ""
 var last_settlement_report: Dictionary = {}
 var selected_contract_id: String = ""
 var field_completed_task_ids: Array[String] = []
+var field_task_results_by_id: Dictionary = {}
 var field_battle_resolved: bool = false
 var field_player_position: Vector2 = Vector2.ZERO
 var has_field_player_position: bool = false
@@ -485,9 +486,10 @@ func should_spawn_combat_event(contract: Dictionary) -> bool:
 	return contract_has_combat_event(contract) and not field_battle_resolved
 
 
-func get_settlement_reward(contract: Dictionary) -> Dictionary:
+func get_settlement_reward(contract: Dictionary, task_results: Array = []) -> Dictionary:
 	var reward: Dictionary = contract.get("reward", {}).duplicate(true)
 	add_reward_delta(reward, get_assignment_reward_adjustment(contract))
+	add_reward_delta(reward, get_field_task_reward_adjustment(get_field_task_results(contract) if task_results.is_empty() else task_results))
 	if not field_battle_resolved:
 		return reward
 
@@ -571,6 +573,447 @@ func calculate_assignment_score(primary_stat: String) -> int:
 		if String(item.get("effect", "")) == primary_stat:
 			score += int(item.get("power", 0))
 	return score
+
+
+func get_contract_workload_hint(contract: Dictionary) -> String:
+	var tasks: Array = contract.get("tasks", [])
+	if tasks.size() >= 6:
+		return "많음"
+	if tasks.size() >= 4:
+		return "보통"
+	return "적음"
+
+
+func get_contract_difficulty_hint(contract: Dictionary) -> String:
+	var difficulty := int(contract.get("difficulty", 2))
+	if difficulty >= 4:
+		return "매우 높음"
+	if difficulty >= 3:
+		return "높음"
+	return "보통"
+
+
+func get_contract_primary_intel_hint(contract: Dictionary) -> String:
+	var counts := get_contract_task_stat_counts(contract)
+	var best_stat := ""
+	var best_count := 0
+	for stat_id: String in ["pollution", "hauling", "trap", "cleanup"]:
+		var count := int(counts.get(stat_id, 0))
+		if count > best_count:
+			best_stat = stat_id
+			best_count = count
+
+	if best_stat.is_empty():
+		return "현장 단서 부족"
+	return get_contract_stat_intel_hint(best_stat, best_count)
+
+
+func get_contract_intel_lines(contract: Dictionary) -> Array[String]:
+	var lines: Array[String] = []
+	lines.append("작업량 %s / 난도 %s" % [
+		get_contract_workload_hint(contract),
+		get_contract_difficulty_hint(contract)
+	])
+
+	var counts := get_contract_task_stat_counts(contract)
+	for stat_id: String in ["pollution", "hauling", "trap", "cleanup"]:
+		var count := int(counts.get(stat_id, 0))
+		if count <= 0:
+			continue
+		lines.append(get_contract_stat_intel_hint(stat_id, count))
+
+	return lines
+
+
+func get_contract_uncertainty_lines(contract: Dictionary) -> Array[String]:
+	var lines: Array[String] = []
+	var counts := get_contract_task_stat_counts(contract)
+	if counts.size() >= 3:
+		lines.append("복합 작업 가능성")
+	if contract_has_combat_event(contract):
+		lines.append("방해 세력 가능성")
+
+	var reward: Dictionary = contract.get("reward", {})
+	var risk_delta := int(reward.get("illegal_risk", 0))
+	if risk_delta > 0:
+		lines.append("신고/장부 리스크 주의")
+	elif risk_delta < 0:
+		lines.append("신고 리스크 낮음")
+
+	lines.append("세부 작업은 현장 진입 후 확인")
+	return lines
+
+
+func get_contract_task_stat_counts(contract: Dictionary) -> Dictionary:
+	var counts := {}
+	var tasks: Array = contract.get("tasks", [])
+	for task: Dictionary in tasks:
+		var task_stat := get_task_primary_stat(task)
+		counts[task_stat] = int(counts.get(task_stat, 0)) + 1
+	return counts
+
+
+func get_contract_stat_intel_hint(stat_id: String, count: int) -> String:
+	match stat_id:
+		"pollution":
+			return "오염 흔적 다수" if count >= 2 else "오염 흔적 확인"
+		"hauling":
+			return "유해/잔해 운반 많음" if count >= 2 else "유해/유품 처리 가능"
+		"trap":
+			return "함정 파손 가능성"
+		"cleanup":
+			return "청소/복구 작업 다수" if count >= 2 else "기본 청소 필요"
+		_:
+			return "%s 단서" % get_stat_name(stat_id)
+
+
+func get_contract_assignment_coverage(contract: Dictionary) -> Array[Dictionary]:
+	var coverage: Array[Dictionary] = []
+	var counts := get_contract_task_stat_counts(contract)
+	for stat_id: String in ["pollution", "hauling", "trap", "cleanup"]:
+		var count := int(counts.get(stat_id, 0))
+		if count <= 0:
+			continue
+
+		var score := calculate_assignment_score(stat_id)
+		var required := get_contract_stat_response_required_score(contract, count)
+		var status := get_assignment_response_status(score, required)
+		var status_label := get_assignment_response_status_label(status)
+		var stat_label := get_assignment_response_stat_name(stat_id)
+		coverage.append({
+			"stat_id": stat_id,
+			"stat_label": stat_label,
+			"count": count,
+			"score": score,
+			"required": required,
+			"status": status,
+			"status_label": status_label,
+			"line": "%s 대응 %s" % [stat_label, status_label]
+		})
+	return coverage
+
+
+func get_contract_assignment_coverage_lines(contract: Dictionary) -> Array[String]:
+	var lines: Array[String] = []
+	if selected_staff_ids.is_empty():
+		lines.append("직원 편성 후 대응 확인")
+		return lines
+
+	var coverage := get_contract_assignment_coverage(contract)
+	if coverage.is_empty():
+		lines.append("확인된 대응 단서 없음")
+		return lines
+
+	for item: Dictionary in coverage:
+		lines.append(String(item.get("line", "")))
+	return lines
+
+
+func get_contract_stat_response_required_score(contract: Dictionary, task_count: int) -> int:
+	var difficulty := int(contract.get("difficulty", 2))
+	return max(3, difficulty + 3 + maxi(0, task_count - 1))
+
+
+func get_assignment_response_status(score: int, required: int) -> String:
+	if score >= required:
+		return "strong"
+	if score >= maxi(1, required - 2):
+		return "normal"
+	return "weak"
+
+
+func get_assignment_response_status_label(status: String) -> String:
+	match status:
+		"strong":
+			return "충분"
+		"normal":
+			return "보통"
+		"weak":
+			return "취약"
+		_:
+			return status
+
+
+func get_assignment_response_stat_name(stat_id: String) -> String:
+	match stat_id:
+		"pollution":
+			return "오염"
+		"hauling":
+			return "운반"
+		"trap":
+			return "함정"
+		"cleanup":
+			return "청소"
+		_:
+			return get_stat_name(stat_id)
+
+
+func get_field_feedback_lines(contract: Dictionary, task_results: Array, battle_resolved: bool, max_lines: int = 3) -> Array[String]:
+	var lines: Array[String] = []
+	var coverage_by_stat := {}
+	for item: Dictionary in get_contract_assignment_coverage(contract):
+		coverage_by_stat[String(item.get("stat_id", ""))] = item
+
+	for stat_id: String in ["pollution", "hauling", "trap", "cleanup"]:
+		if lines.size() >= max_lines:
+			return lines
+		if not coverage_by_stat.has(stat_id):
+			continue
+
+		var stat_results := get_task_results_for_stat(task_results, stat_id)
+		if stat_results.is_empty():
+			continue
+
+		var coverage: Dictionary = coverage_by_stat.get(stat_id, {})
+		var status := String(coverage.get("status", "normal"))
+		var grade_counts := get_field_task_grade_counts(stat_results)
+		var poor_count := int(grade_counts.get("poor", 0))
+		var excellent_count := int(grade_counts.get("excellent", 0))
+		var stat_label := get_assignment_response_stat_name(stat_id)
+
+		if poor_count > 0 and status == "weak":
+			lines.append("%s 대응 부족" % stat_label)
+		elif poor_count > 0:
+			lines.append("%s 현장 변수 발생" % stat_label)
+		elif excellent_count > 0 and status == "strong":
+			lines.append("%s 대응 적중" % stat_label)
+		else:
+			lines.append("%s 대응 무난" % stat_label)
+
+	if lines.size() < max_lines and contract_has_combat_event(contract):
+		lines.append("방해 세력 %s" % ("해결" if battle_resolved else "발생"))
+	return lines
+
+
+func get_task_results_for_stat(task_results: Array, stat_id: String) -> Array:
+	var results: Array = []
+	for result: Dictionary in task_results:
+		if String(result.get("primary_stat", "")) == stat_id:
+			results.append(result)
+	return results
+
+
+func complete_field_task(task: Dictionary) -> Dictionary:
+	var task_id := String(task.get("id", ""))
+	if task_id.is_empty():
+		return {}
+
+	if not field_completed_task_ids.has(task_id):
+		field_completed_task_ids.append(task_id)
+
+	var result := resolve_field_task(task)
+	field_task_results_by_id[task_id] = result
+	changed.emit()
+	return result.duplicate(true)
+
+
+func resolve_field_task(task: Dictionary) -> Dictionary:
+	var task_stat := get_task_primary_stat(task)
+	var staff_score := calculate_field_task_staff_score(task_stat)
+	var gear_score := calculate_field_task_gear_score(task, task_stat)
+	var team_score := staff_score + gear_score
+	var required_score := get_field_task_required_score(task)
+	var grade := get_field_task_grade(team_score, required_score)
+	var reward_adjustment := get_field_task_grade_reward_adjustment(task_stat, grade)
+
+	return {
+		"task_id": String(task.get("id", "")),
+		"task_label": String(task.get("label", "작업")),
+		"primary_stat": task_stat,
+		"staff_score": staff_score,
+		"gear_score": gear_score,
+		"team_score": team_score,
+		"required_score": required_score,
+		"grade": grade,
+		"grade_label": get_field_task_grade_label(grade),
+		"reason": get_field_task_reason(task_stat, grade, staff_score, gear_score, required_score),
+		"reward_adjustment": reward_adjustment
+	}
+
+
+func calculate_field_task_staff_score(task_stat: String) -> int:
+	var score := 0
+	for staff_id: String in selected_staff_ids:
+		var member := get_staff_by_id(staff_id)
+		score += int(member.get(task_stat, 0))
+	return score
+
+
+func calculate_field_task_gear_score(task: Dictionary, task_stat: String) -> int:
+	var score := 0
+	for gear_id: String in selected_gear_ids:
+		var item := get_gear_by_id(gear_id)
+		if item.is_empty():
+			continue
+		if String(item.get("effect", "")) == task_stat:
+			score += int(item.get("power", 0))
+	return score
+
+
+func get_field_task_required_score(task: Dictionary) -> int:
+	var contract := get_selected_contract()
+	var difficulty := int(task.get("difficulty", contract.get("difficulty", 2)))
+	return max(3, difficulty + 3)
+
+
+func get_field_task_grade(team_score: int, required_score: int) -> String:
+	if team_score >= required_score + 2:
+		return "excellent"
+	if team_score >= required_score:
+		return "standard"
+	return "poor"
+
+
+func get_field_task_grade_label(grade: String) -> String:
+	match grade:
+		"excellent":
+			return "우수"
+		"standard":
+			return "보통"
+		"poor":
+			return "미흡"
+		_:
+			return grade
+
+
+func get_field_task_reason(task_stat: String, grade: String, staff_score: int, gear_score: int, required_score: int) -> String:
+	var stat_name := get_stat_name(task_stat)
+	match grade:
+		"excellent":
+			if gear_score > 0:
+				return "%s 장비 보정 우수" % stat_name
+			return "%s 담당 인력 우수" % stat_name
+		"standard":
+			if gear_score > 0:
+				return "%s 장비 보정" % stat_name
+			return "%s 대응 보통" % stat_name
+		"poor":
+			if staff_score <= 0:
+				return "%s 담당 인력 부족" % stat_name
+			if gear_score <= 0 and staff_score < required_score:
+				return "%s 장비 부족" % stat_name
+			return "%s 대응 부족" % stat_name
+		_:
+			return "%s 확인" % stat_name
+
+
+func get_field_task_grade_reward_adjustment(task_stat: String, grade: String) -> Dictionary:
+	var adjustment := create_empty_reward()
+	match grade:
+		"excellent":
+			match task_stat:
+				"cleanup":
+					adjustment["money"] = 5
+					adjustment["hygiene"] = 1
+				"pollution":
+					adjustment["hell_trust"] = 1
+					adjustment["hygiene"] = 2
+				"hauling":
+					adjustment["money"] = 8
+					adjustment["human_reputation"] = 1
+				"trap":
+					adjustment["hell_trust"] = 2
+					adjustment["illegal_risk"] = -1
+		"poor":
+			match task_stat:
+				"cleanup":
+					adjustment["hell_trust"] = -1
+					adjustment["hygiene"] = -2
+				"pollution":
+					adjustment["hygiene"] = -3
+					adjustment["illegal_risk"] = 1
+				"hauling":
+					adjustment["money"] = -5
+					adjustment["human_reputation"] = -1
+				"trap":
+					adjustment["hell_trust"] = -2
+					adjustment["illegal_risk"] = 2
+	return adjustment
+
+
+func get_field_task_results(contract: Dictionary) -> Array:
+	var results: Array = []
+	var tasks: Array = contract.get("tasks", [])
+	for task: Dictionary in tasks:
+		var task_id := String(task.get("id", ""))
+		if task_id.is_empty() or not field_completed_task_ids.has(task_id):
+			continue
+
+		var result: Dictionary = field_task_results_by_id.get(task_id, {})
+		if result.is_empty():
+			result = resolve_field_task(task)
+			field_task_results_by_id[task_id] = result
+		results.append(result.duplicate(true))
+	return results
+
+
+func get_field_task_reward_adjustment(task_results: Array) -> Dictionary:
+	var adjustment := create_empty_reward()
+	for result: Dictionary in task_results:
+		var result_adjustment: Dictionary = result.get("reward_adjustment", {})
+		add_reward_delta(adjustment, result_adjustment)
+	return adjustment
+
+
+func get_field_task_grade_counts(task_results: Array) -> Dictionary:
+	var counts := {
+		"excellent": 0,
+		"standard": 0,
+		"poor": 0
+	}
+	for result: Dictionary in task_results:
+		var grade := String(result.get("grade", "standard"))
+		counts[grade] = int(counts.get(grade, 0)) + 1
+	return counts
+
+
+func get_field_task_grade_counts_text(task_results: Array) -> String:
+	var counts := get_field_task_grade_counts(task_results)
+	return "우수 %d / 보통 %d / 미흡 %d" % [
+		int(counts.get("excellent", 0)),
+		int(counts.get("standard", 0)),
+		int(counts.get("poor", 0))
+	]
+
+
+func get_field_contract_grade_label(task_results: Array, total_count: int) -> String:
+	if total_count <= 0:
+		return "B"
+
+	var counts := get_field_task_grade_counts(task_results)
+	var quality_points := int(counts.get("excellent", 0)) * 2 + int(counts.get("standard", 0))
+	var max_quality_points: int = max(1, total_count * 2)
+	var ratio := float(quality_points) / float(max_quality_points)
+	if ratio >= 0.9:
+		return "A"
+	if ratio >= 0.7:
+		return "B"
+	if ratio >= 0.5:
+		return "C"
+	return "D"
+
+
+func get_field_key_reason_lines(task_results: Array, max_lines: int = 3) -> Array[String]:
+	var lines: Array[String] = []
+	append_unique_task_reasons(lines, task_results, "poor", max_lines)
+	if lines.size() < max_lines:
+		append_unique_task_reasons(lines, task_results, "excellent", max_lines)
+	if lines.is_empty():
+		lines.append("전체 작업 보통 처리")
+	return lines
+
+
+func append_unique_task_reasons(lines: Array[String], task_results: Array, grade: String, max_lines: int) -> void:
+	for result: Dictionary in task_results:
+		if lines.size() >= max_lines:
+			return
+		if String(result.get("grade", "")) != grade:
+			continue
+
+		var reason := String(result.get("reason", "")).strip_edges()
+		if reason.is_empty() or lines.has(reason):
+			continue
+		lines.append(reason)
 
 
 func get_stat_name(stat_id: String) -> String:
@@ -746,6 +1189,7 @@ func get_field_player_position(default_position: Vector2) -> Vector2:
 
 func clear_field_operation_state() -> void:
 	field_completed_task_ids.clear()
+	field_task_results_by_id.clear()
 	field_battle_resolved = false
 	field_player_position = Vector2.ZERO
 	has_field_player_position = false
@@ -753,18 +1197,26 @@ func clear_field_operation_state() -> void:
 
 
 func apply_contract_field_report(contract: Dictionary, completed_count: int, total_count: int) -> void:
-	var reward := get_settlement_reward(contract)
+	var task_results := get_field_task_results(contract)
+	var reward := get_settlement_reward(contract, task_results)
 	var before_values := get_company_values()
 	var battle_resolved := field_battle_resolved
 	var battle_report := last_battle_report
 	var assignment_lines := get_assignment_effect_lines(contract)
+	var dispatched_staff_ids := selected_staff_ids.duplicate()
 	var staff_changes := apply_selected_staff_stamina_cost(completed_count, total_count, battle_resolved)
+	var contract_grade := get_field_contract_grade_label(task_results, total_count)
+	var task_grade_counts_text := get_field_task_grade_counts_text(task_results)
+	var key_reason_lines := get_field_key_reason_lines(task_results)
+	var assignment_coverage_lines := get_contract_assignment_coverage_lines(contract)
+	var field_feedback_lines := get_field_feedback_lines(contract, task_results, battle_resolved)
 	var battle_result_text := ""
 	if battle_resolved:
 		battle_result_text = " | 전투 해결"
 
-	var report: String = "%s 보고: 작업 %d/%d 완료%s | %s" % [
+	var report: String = "%s 결과 %s: 작업 %d/%d 완료%s | %s" % [
 		String(contract.get("title", "현장")),
+		contract_grade,
 		completed_count,
 		total_count,
 		battle_result_text,
@@ -792,9 +1244,16 @@ func apply_contract_field_report(contract: Dictionary, completed_count: int, tot
 		"location": String(contract.get("location", "")),
 		"completed_count": completed_count,
 		"total_count": total_count,
+		"contract_grade": contract_grade,
+		"task_grade_counts_text": task_grade_counts_text,
+		"key_reason_lines": key_reason_lines,
+		"task_results": task_results.duplicate(true),
 		"battle_resolved": battle_resolved,
 		"battle_report": battle_report,
 		"assignment_lines": assignment_lines,
+		"assignment_coverage_lines": assignment_coverage_lines,
+		"field_feedback_lines": field_feedback_lines,
+		"dispatched_staff_ids": dispatched_staff_ids,
 		"staff_changes": staff_changes,
 		"reward": reward.duplicate(true),
 		"before": before_values,
@@ -835,6 +1294,29 @@ func apply_selected_staff_stamina_cost(completed_count: int, total_count: int, b
 	return lines
 
 
+func apply_daily_staff_recovery(recently_dispatched_staff_ids: Array) -> Array[String]:
+	var lines: Array[String] = []
+	ensure_assignment_data()
+
+	for index in range(staff_roster.size()):
+		var staff_id := String(staff_roster[index].get("id", ""))
+		var before_stamina := int(staff_roster[index].get("stamina", 0))
+		var recovery_amount := 5 if recently_dispatched_staff_ids.has(staff_id) else 20
+		var after_stamina: int = mini(100, before_stamina + recovery_amount)
+		staff_roster[index]["stamina"] = after_stamina
+		staff_roster[index]["injured"] = after_stamina <= 0
+
+		if after_stamina == before_stamina:
+			continue
+		lines.append("%s: 체력 %d -> %d" % [
+			String(staff_roster[index].get("name", staff_id)),
+			before_stamina,
+			after_stamina
+		])
+
+	return lines
+
+
 func get_staff_index_by_id(staff_id: String) -> int:
 	ensure_assignment_data()
 	for index in range(staff_roster.size()):
@@ -865,9 +1347,12 @@ func advance_day_after_report() -> void:
 	if not has_last_settlement_report():
 		return
 
+	var recently_dispatched_staff_ids: Array = last_settlement_report.get("dispatched_staff_ids", [])
+	var recovery_lines := apply_daily_staff_recovery(recently_dispatched_staff_ids)
 	day += 1
 	last_settlement_report.clear()
-	last_report = "Day %d 업무 시작: 의뢰 게시판에서 다음 현장을 고르세요." % day
+	var recovery_text := "직원 체력 회복 없음" if recovery_lines.is_empty() else "직원 체력 회복 %d명" % recovery_lines.size()
+	last_report = "Day %d 업무 시작: %s. 의뢰 게시판에서 다음 현장을 고르세요." % [day, recovery_text]
 	changed.emit()
 
 
